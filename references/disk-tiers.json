@@ -1,0 +1,24 @@
+{
+  "_comment": "Azure Managed Disk size tiers. A requested disk size is rounded UP to the next tier. skuName is what the Azure Retail Prices API expects (e.g. 'P4 LRS'). Price is a flat per-disk monthly charge for the tier.",
+  "disk_types": {
+    "premium-ssd": {"product_name": "Premium SSD Managed Disks", "tier_prefix": "P", "label": "Premium SSD (v1)"},
+    "standard-ssd": {"product_name": "Standard SSD Managed Disks", "tier_prefix": "E", "label": "Standard SSD"},
+    "standard-hdd": {"product_name": "Standard HDD Managed Disks", "tier_prefix": "S", "label": "Standard HDD"}
+  },
+  "tiers": [
+    {"index": 1,  "size_gib": 4},
+    {"index": 2,  "size_gib": 8},
+    {"index": 3,  "size_gib": 16},
+    {"index": 4,  "size_gib": 32},
+    {"index": 6,  "size_gib": 64},
+    {"index": 10, "size_gib": 128},
+    {"index": 15, "size_gib": 256},
+    {"index": 20, "size_gib": 512},
+    {"index": 30, "size_gib": 1024},
+    {"index": 40, "size_gib": 2048},
+    {"index": 50, "size_gib": 4096},
+    {"index": 60, "size_gib": 8192},
+    {"index": 70, "size_gib": 16384},
+    {"index": 80, "size_gib": 32768}
+  ]
+}

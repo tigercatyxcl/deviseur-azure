@@ -1,0 +1,54 @@
+{
+  "_comment": "Curated catalog of common Azure VM SKUs with vCPU and RAM (GiB). Used to map a hardware spec (e.g. 4 vCPU / 8 GB) to candidate flavors before querying live prices. ram_gib follows Azure family ratios: B=variable, D=4GiB/vCPU, E=8GiB/vCPU, F=2GiB/vCPU.",
+  "families": {
+    "B": "Burstable (cheapest, bursts CPU credits) - dev/test, low steady load",
+    "D": "General purpose (4 GiB/vCPU) - web, app servers, most workloads",
+    "E": "Memory optimized (8 GiB/vCPU) - databases, caches, in-memory",
+    "F": "Compute optimized (2 GiB/vCPU) - batch, gaming, CPU-bound"
+  },
+  "skus": [
+    {"sku": "Standard_B1s",      "family": "B", "vcpu": 1,  "ram_gib": 1},
+    {"sku": "Standard_B1ms",     "family": "B", "vcpu": 1,  "ram_gib": 2},
+    {"sku": "Standard_B2s",      "family": "B", "vcpu": 2,  "ram_gib": 4},
+    {"sku": "Standard_B2ms",     "family": "B", "vcpu": 2,  "ram_gib": 8},
+    {"sku": "Standard_B4ms",     "family": "B", "vcpu": 4,  "ram_gib": 16},
+    {"sku": "Standard_B8ms",     "family": "B", "vcpu": 8,  "ram_gib": 32},
+    {"sku": "Standard_B16ms",    "family": "B", "vcpu": 16, "ram_gib": 64},
+
+    {"sku": "Standard_D2as_v6",  "family": "D", "vcpu": 2,  "ram_gib": 8},
+    {"sku": "Standard_D4as_v6",  "family": "D", "vcpu": 4,  "ram_gib": 16},
+    {"sku": "Standard_D8as_v6",  "family": "D", "vcpu": 8,  "ram_gib": 32},
+    {"sku": "Standard_D16as_v6", "family": "D", "vcpu": 16, "ram_gib": 64},
+    {"sku": "Standard_D32as_v6", "family": "D", "vcpu": 32, "ram_gib": 128},
+
+    {"sku": "Standard_D2as_v5",  "family": "D", "vcpu": 2,  "ram_gib": 8},
+    {"sku": "Standard_D4as_v5",  "family": "D", "vcpu": 4,  "ram_gib": 16},
+    {"sku": "Standard_D8as_v5",  "family": "D", "vcpu": 8,  "ram_gib": 32},
+    {"sku": "Standard_D16as_v5", "family": "D", "vcpu": 16, "ram_gib": 64},
+    {"sku": "Standard_D32as_v5", "family": "D", "vcpu": 32, "ram_gib": 128},
+
+    {"sku": "Standard_D2s_v5",   "family": "D", "vcpu": 2,  "ram_gib": 8},
+    {"sku": "Standard_D4s_v5",   "family": "D", "vcpu": 4,  "ram_gib": 16},
+    {"sku": "Standard_D8s_v5",   "family": "D", "vcpu": 8,  "ram_gib": 32},
+    {"sku": "Standard_D16s_v5",  "family": "D", "vcpu": 16, "ram_gib": 64},
+    {"sku": "Standard_D32s_v5",  "family": "D", "vcpu": 32, "ram_gib": 128},
+
+    {"sku": "Standard_E2as_v5",  "family": "E", "vcpu": 2,  "ram_gib": 16},
+    {"sku": "Standard_E4as_v5",  "family": "E", "vcpu": 4,  "ram_gib": 32},
+    {"sku": "Standard_E8as_v5",  "family": "E", "vcpu": 8,  "ram_gib": 64},
+    {"sku": "Standard_E16as_v5", "family": "E", "vcpu": 16, "ram_gib": 128},
+    {"sku": "Standard_E32as_v5", "family": "E", "vcpu": 32, "ram_gib": 256},
+
+    {"sku": "Standard_E2s_v5",   "family": "E", "vcpu": 2,  "ram_gib": 16},
+    {"sku": "Standard_E4s_v5",   "family": "E", "vcpu": 4,  "ram_gib": 32},
+    {"sku": "Standard_E8s_v5",   "family": "E", "vcpu": 8,  "ram_gib": 64},
+    {"sku": "Standard_E16s_v5",  "family": "E", "vcpu": 16, "ram_gib": 128},
+    {"sku": "Standard_E32s_v5",  "family": "E", "vcpu": 32, "ram_gib": 256},
+
+    {"sku": "Standard_F2s_v2",   "family": "F", "vcpu": 2,  "ram_gib": 4},
+    {"sku": "Standard_F4s_v2",   "family": "F", "vcpu": 4,  "ram_gib": 8},
+    {"sku": "Standard_F8s_v2",   "family": "F", "vcpu": 8,  "ram_gib": 16},
+    {"sku": "Standard_F16s_v2",  "family": "F", "vcpu": 16, "ram_gib": 32},
+    {"sku": "Standard_F32s_v2",  "family": "F", "vcpu": 32, "ram_gib": 64}
+  ]
+}
