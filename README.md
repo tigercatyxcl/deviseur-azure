@@ -1,155 +1,175 @@
 # Deviseur Azure
 
-把一句话的硬件规格（如 `4U8G、25G SSD`）变成一份 Azure 报价。实时价格来自
-[Azure Retail Prices API](https://prices.azure.com/api/retail/prices)（无需密钥），
-规格→机型（flavor）映射使用本地目录 `references/vm-catalog.json`。
+**English** | [中文](README.zh-CN.md)
 
-同一套 `scripts/` + `references/` 可被三种 AI 编码工具复用：
+Turn a one-line hardware spec (e.g. `4U8G, 25G SSD`) into an Azure price quote.
+Live prices come from the
+[Azure Retail Prices API](https://prices.azure.com/api/retail/prices) (no key
+required); the spec→flavor mapping uses the local catalog in
+`references/vm-catalog.json`.
 
-| 工具 | 入口文件 |
-|------|---------|
+One set of `scripts/` + `references/` is reusable by three AI coding tools:
+
+| Tool | Entry file |
+|------|-----------|
 | Claude Code | `SKILL.md` |
 | OpenAI Codex | `AGENTS.md` |
 | GitHub Copilot | `.github/copilot-instructions.md` |
 
 ---
 
-## 1. 环境要求
+## 1. Requirements
 
 - **Python 3.9+**
-- 依赖：`requests`
-- 能访问 `prices.azure.com`（无需 Azure 账号 / API key）
+- Dependency: `requests`
+- Network access to `prices.azure.com` (no Azure account / API key needed)
 
 ```bash
 pip install -r requirements.txt
-# 或： pip install requests
+# or: pip install requests
 ```
 
-验证：
+Verify:
 ```bash
 python3 scripts/propose_flavors.py --vcpu 2 --ram 8
 ```
-能打印出一张机型候选表即说明环境就绪。
+If it prints a candidate-flavor table, your environment is ready.
 
 ---
 
-## 2. 安装
+## 2. Installation
 
-### 2.1 作为 Claude Code skill（自动触发 + `/deviseur-azure`）
+### 2.1 As a Claude Code skill (auto-trigger + `/deviseur-azure`)
 
-把整个 skill 目录复制到全局 skills 目录：
+Copy the whole skill into your global skills directory:
 
 ```bash
 mkdir -p ~/.claude/skills/deviseur-azure
 cp -R SKILL.md scripts references ~/.claude/skills/deviseur-azure/
 ```
 
-重开一个 Claude Code 会话后，直接说「帮我报一个 4U8G、25G SSD 的 Azure 价」即可自动触发，
-也可手动 `/deviseur-azure`。
+Open a new Claude Code session and just say "quote a 4U8G, 25G SSD Azure VM" —
+it triggers automatically. You can also invoke `/deviseur-azure`.
 
-> 注意：全局安装的副本与本仓库是两份拷贝。改了脚本要么重新 `cp`，要么直接在仓库里跑脚本。
+> Note: the global copy is separate from this repo. After changing scripts,
+> re-copy them, or run the scripts directly from the repo.
 
-### 2.2 作为 Codex 项目（`AGENTS.md`）
+### 2.2 As a Codex project (`AGENTS.md`)
 
-无需额外安装：Codex（CLI 或云端 agent）会自动读取仓库根目录的 `AGENTS.md`。
-在该仓库里向 Codex 描述规格报价需求即可，它会运行 `scripts/` 下的脚本。
+No extra install: Codex (CLI or cloud agent) reads `AGENTS.md` at the repo root.
+Describe a spec quote in this repo and it runs the scripts under `scripts/`.
 
-### 2.3 作为 GitHub Copilot 项目（`.github/copilot-instructions.md`）
+### 2.3 As a GitHub Copilot project (`.github/copilot-instructions.md`)
 
-无需额外安装：在 VS Code 用 **Copilot Chat 的 agent mode**（能执行终端命令）打开本仓库，
-`.github/copilot-instructions.md` 会自动注入。普通行内补全只会参考说明、不会自动跑脚本。
+No extra install: open this repo in VS Code with **Copilot Chat agent mode**
+(which can run terminal commands) and `.github/copilot-instructions.md` is
+injected automatically. Plain inline completion only reads the guidance; it does
+not run scripts.
 
 ---
 
-## 3. 使用：两步工作流
+## 3. Usage — two-step workflow
 
-报价始终是两步、交互式的——先选机型，再出报价。
+Quoting is always two interactive steps: pick a flavor first, then quote.
 
-### 第 1 步：提议机型（propose）
+### Step 1 — Propose flavors
 
-把规格拆成 vCPU 与内存（GiB）：`4U8G` → `--vcpu 4 --ram 8`。
+Split the spec into vCPU and RAM (GiB): `4U8G` → `--vcpu 4 --ram 8`.
 
 ```bash
 python3 scripts/propose_flavors.py --vcpu 4 --ram 8 --region francecentral
 ```
 
-输出一张跨家族（Burstable / General / Memory / Compute）的候选表，精确匹配项排在最前，
-含 Linux €/小时、€/月、1 年预留 €/月。**从中选一个机型。**
+Outputs candidates across families (Burstable / General / Memory / Compute),
+exact-spec match first, with Linux €/hr, €/month, and 1yr reserved €/month.
+**Pick one flavor.**
 
-### 第 2 步：整机报价（quote）
+### Step 2 — Full quote
 
-带上磁盘需求（`25G SSD` → `--disk-size 25 --disk-type premium-ssd`）：
+Add the disk requirement (`25G SSD` → `--disk-size 25 --disk-type premium-ssd`):
 
 ```bash
 python3 scripts/query_quote.py --sku Standard_D4as_v5 --region francecentral \
     --disk-size 25 --disk-type premium-ssd --os linux --qty 1
 ```
 
-输出：VM 计算价表 + 托管磁盘 + 四种付费方式合计（按需 / Spot / 1 年预留 / 3 年预留）。
+Outputs: VM compute table + managed disk + total across all commitment options
+(PAYG / Spot / 1yr Reserved / 3yr Reserved).
 
-### 导出为 Markdown 文件
+### Export to a Markdown file
 
 ```bash
-# 自动命名到 quotes/quote-<sku>-<region>-<date>.md
+# auto-named under quotes/quote-<sku>-<region>-<date>.md
 python3 scripts/query_quote.py --sku D4as_v5 --disk-size 25 --output
 
-# 指定路径
+# specific path
 python3 scripts/query_quote.py --sku D4as_v5 --disk-size 25 --output /tmp/quote.md
 ```
 
 ---
 
-## 4. 参数速查
+## 4. Options reference
 
 ### propose_flavors.py
-| 参数 | 默认 | 说明 |
-|------|------|------|
-| `--vcpu` / `-v` | 必填 | vCPU 数量 |
-| `--ram` / `-m` | 必填 | 内存（GiB） |
-| `--region` / `-r` | francecentral | Azure 区域 |
-| `--currency` / `-c` | EUR | 货币代码 |
-| `--max` | 6 | 最多候选数 |
+| Option | Default | Notes |
+|--------|---------|-------|
+| `--vcpu` / `-v` | required | vCPU count |
+| `--ram` / `-m` | required | RAM in GiB |
+| `--region` / `-r` | francecentral | Azure region |
+| `--currency` / `-c` | EUR | Currency code |
+| `--max` | 6 | Max candidates |
 
 ### query_quote.py
-| 参数 | 默认 | 说明 |
-|------|------|------|
-| `--sku` / `-s` | 必填 | 选定机型（自动补 `Standard_` 前缀） |
-| `--region` / `-r` | francecentral | Azure 区域 |
-| `--currency` / `-c` | EUR | 货币代码 |
-| `--os` | linux | `linux` 或 `windows`（合计行用哪种 OS） |
-| `--qty` / `-q` | 1 | 相同 VM 台数 |
-| `--disk-size` | 无 | 磁盘大小 GiB（向上取整到档位） |
+| Option | Default | Notes |
+|--------|---------|-------|
+| `--sku` / `-s` | required | Chosen flavor (`Standard_` prefix auto-added) |
+| `--region` / `-r` | francecentral | Azure region |
+| `--currency` / `-c` | EUR | Currency code |
+| `--os` | linux | `linux` or `windows` (which OS the total row uses) |
+| `--qty` / `-q` | 1 | Number of identical VMs |
+| `--disk-size` | none | Disk size in GiB (rounded up to next tier) |
 | `--disk-type` | premium-ssd | `premium-ssd` / `standard-ssd` / `standard-hdd` |
-| `--output` / `-o` | 无 | 导出 Markdown；裸标志自动命名，或传 PATH。仍会回显屏幕 |
+| `--output` / `-o` | none | Export Markdown; bare flag auto-names, or pass a PATH. Still echoes to screen |
 
 ---
 
-## 5. 定价口径（理解报价的关键）
+## 5. Pricing model (key to reading a quote)
 
-- **Spot**：API 里被标成 `type=Consumption` 且 meter 名含 "Spot"（不是 `type=Spot`），脚本已正确处理。
-- **预留（Reservation）**：`retailPrice` 是**整个周期的总价**，脚本已折算成有效时价/月价。
-- **Linux 与 Windows+AHB**：计算价相同。
-- **磁盘**：按**向上一档**计费（25 GiB → P4 = 32 GiB），无预留折扣。
-- 月 = 时价 × 730；年 = 时价 × 8760。
-
----
-
-## 6. 扩展
-
-- 加机型（GPU N 系列、约束核机型等）：编辑 `references/vm-catalog.json`，补一行 `sku/family/vcpu/ram_gib`。
-- 加磁盘档位：编辑 `references/disk-tiers.json`。
-- 非 VM/磁盘的服务名映射：见 `references/service-mapping.md`。
-
-> 改动行为时，请同步更新 `SKILL.md`、`AGENTS.md`、`.github/copilot-instructions.md` 三份说明。
+- **Spot** is returned by the API as `type=Consumption` with "Spot" in the meter
+  name (not `type=Spot`); the scripts handle this.
+- **Reservation** `retailPrice` is the TOTAL for the whole term; the scripts
+  amortize it to an effective hourly/monthly rate.
+- **Linux and Windows+AHB** share the same compute price.
+- **Disk** bills at the next tier up (25 GiB → P4 = 32 GiB), with no reservation
+  discount.
+- Monthly = hourly × 730; annual = hourly × 8760.
 
 ---
 
-## 7. 常见问题
+## 6. Extending
 
-| 现象 | 排查 |
-|------|------|
+- Add flavors (GPU N-series, constrained-core sizes, etc.): edit
+  `references/vm-catalog.json` with a `sku/family/vcpu/ram_gib` row.
+- Add disk tiers: edit `references/disk-tiers.json`.
+- Non-VM/disk service-name mapping: see `references/service-mapping.md`.
+
+> When you change behavior, keep `SKILL.md`, `AGENTS.md`, and
+> `.github/copilot-instructions.md` in sync.
+
+---
+
+## 7. Troubleshooting
+
+| Symptom | Fix |
+|---------|-----|
 | `ModuleNotFoundError: requests` | `pip install -r requirements.txt` |
-| 价格全是 N/A | 该 SKU 在此 region 不可用；换 region，或确认 SKU 名拼写 |
-| 连接超时 | 检查网络是否能访问 `prices.azure.com`（公司代理/防火墙） |
-| Copilot 不自动跑脚本 | 需用 agent mode；普通补全不执行命令 |
-| Claude Code 没触发 skill | 确认已复制到 `~/.claude/skills/deviseur-azure/` 并重开会话 |
+| All prices show N/A | SKU not available in that region; change region or check the SKU name |
+| Connection timeout | Check access to `prices.azure.com` (corporate proxy/firewall) |
+| Copilot doesn't run scripts | Use agent mode; inline completion does not execute commands |
+| Claude Code doesn't trigger the skill | Ensure it's copied to `~/.claude/skills/deviseur-azure/` and start a new session |
+
+---
+
+## License
+
+[MIT](LICENSE)
