@@ -6,11 +6,12 @@
 [Azure Retail Prices API](https://prices.azure.com/api/retail/prices)（无需密钥），
 规格→机型（flavor）映射使用本地目录 `references/vm-catalog.json`。
 
-同一套 `scripts/` + `references/` 可被三种 AI 编码工具复用：
+同一套 `scripts/` + `references/` 可被四种 AI 编码工具复用：
 
 | 工具 | 入口文件 |
 |------|---------|
 | Claude Code | `SKILL.md` |
+| Hermes Agent | `SKILL.md`（同一文件——Hermes 读取 Claude 的 skill 格式） |
 | OpenAI Codex | `AGENTS.md` |
 | GitHub Copilot | `.github/copilot-instructions.md` |
 
@@ -51,12 +52,30 @@ cp -R SKILL.md scripts references ~/.claude/skills/deviseur-azure/
 
 > 注意：全局安装的副本与本仓库是两份拷贝。改了脚本要么重新 `cp`，要么直接在仓库里跑脚本。
 
-### 2.2 作为 Codex 项目（`AGENTS.md`）
+### 2.2 作为 Hermes Agent skill（无需复制）
+
+[Hermes Agent](https://github.com/tigercatyxcl) 读取的就是 Claude 的 `SKILL.md`
+格式，所以本仓库本身就是一个 Hermes skill。**无需复制代码**，只要把仓库路径加进
+Hermes `config.yaml` 的 `skills.external_dirs` 即可。Hermes 每个 profile 用各自
+的 config，所以请编辑你实际运行的 profile——`~/.hermes/profiles/<name>/config.yaml`
+——以及/或默认的 `~/.hermes/config.yaml`：
+
+```yaml
+skills:
+  external_dirs:
+    - /path/to/deviseur-azure
+```
+
+之后 Hermes 会发现 `SKILL.md`，注入绝对路径 `[Skill directory: …]`，并用它的
+shell 跑同一套 `scripts/`——所以改了仓库立即生效，无需重新复制。请确保 Hermes 实际
+调用的 Python 环境里装了 `requests`。
+
+### 2.3 作为 Codex 项目（`AGENTS.md`）
 
 无需额外安装：Codex（CLI 或云端 agent）会自动读取仓库根目录的 `AGENTS.md`。
 在该仓库里向 Codex 描述规格报价需求即可，它会运行 `scripts/` 下的脚本。
 
-### 2.3 作为 GitHub Copilot 项目（`.github/copilot-instructions.md`）
+### 2.4 作为 GitHub Copilot 项目（`.github/copilot-instructions.md`）
 
 无需额外安装：在 VS Code 用 **Copilot Chat 的 agent mode**（能执行终端命令）打开本仓库，
 `.github/copilot-instructions.md` 会自动注入。普通行内补全只会参考说明、不会自动跑脚本。
@@ -142,7 +161,7 @@ python3 scripts/query_quote.py --sku D4as_v5 --disk-size 25 --output /tmp/quote.
 - 加磁盘档位：编辑 `references/disk-tiers.json`。
 - 非 VM/磁盘的服务名映射：见 `references/service-mapping.md`。
 
-> 改动行为时，请同步更新 `SKILL.md`、`AGENTS.md`、`.github/copilot-instructions.md` 三份说明。
+> 改动行为时，请同步更新 `SKILL.md`（Claude Code 与 Hermes 共用）、`AGENTS.md`、`.github/copilot-instructions.md` 三份说明。
 
 ---
 

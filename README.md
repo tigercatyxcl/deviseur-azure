@@ -8,11 +8,12 @@ Live prices come from the
 required); the spec→flavor mapping uses the local catalog in
 `references/vm-catalog.json`.
 
-One set of `scripts/` + `references/` is reusable by three AI coding tools:
+One set of `scripts/` + `references/` is reusable by four AI coding tools:
 
 | Tool | Entry file |
 |------|-----------|
 | Claude Code | `SKILL.md` |
+| Hermes Agent | `SKILL.md` (same file — Hermes reads the Claude skill format) |
 | OpenAI Codex | `AGENTS.md` |
 | GitHub Copilot | `.github/copilot-instructions.md` |
 
@@ -54,12 +55,32 @@ it triggers automatically. You can also invoke `/deviseur-azure`.
 > Note: the global copy is separate from this repo. After changing scripts,
 > re-copy them, or run the scripts directly from the repo.
 
-### 2.2 As a Codex project (`AGENTS.md`)
+### 2.2 As a Hermes Agent skill (no copy needed)
+
+[Hermes Agent](https://github.com/tigercatyxcl) reads the same Claude `SKILL.md`
+format, so this repo is already a Hermes skill. Register it **without copying the
+code** by adding the repo path to `skills.external_dirs` in your Hermes
+`config.yaml`. Hermes uses one config per active profile, so edit the profile(s)
+you run — `~/.hermes/profiles/<name>/config.yaml` — and/or the default
+`~/.hermes/config.yaml`:
+
+```yaml
+skills:
+  external_dirs:
+    - /path/to/deviseur-azure
+```
+
+Hermes then discovers `SKILL.md`, injects the absolute `[Skill directory: …]`,
+and runs the same `scripts/` via its shell — so edits to the repo take effect
+immediately, no re-copy. Make sure `requests` is installed in the Python env
+Hermes shells into.
+
+### 2.3 As a Codex project (`AGENTS.md`)
 
 No extra install: Codex (CLI or cloud agent) reads `AGENTS.md` at the repo root.
 Describe a spec quote in this repo and it runs the scripts under `scripts/`.
 
-### 2.3 As a GitHub Copilot project (`.github/copilot-instructions.md`)
+### 2.4 As a GitHub Copilot project (`.github/copilot-instructions.md`)
 
 No extra install: open this repo in VS Code with **Copilot Chat agent mode**
 (which can run terminal commands) and `.github/copilot-instructions.md` is
@@ -153,8 +174,8 @@ python3 scripts/query_quote.py --sku D4as_v5 --disk-size 25 --output /tmp/quote.
 - Add disk tiers: edit `references/disk-tiers.json`.
 - Non-VM/disk service-name mapping: see `references/service-mapping.md`.
 
-> When you change behavior, keep `SKILL.md`, `AGENTS.md`, and
-> `.github/copilot-instructions.md` in sync.
+> When you change behavior, keep `SKILL.md` (shared by Claude Code and Hermes),
+> `AGENTS.md`, and `.github/copilot-instructions.md` in sync.
 
 ---
 
