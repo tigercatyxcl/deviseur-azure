@@ -59,12 +59,17 @@ per-VM mapping plus rollup totals (PAYG + 1yr Reserved) for a target region.
 python3 scripts/analyze_rvtools.py inventory.xlsx --region francecentral
 # include powered-off VMs / write a Markdown report:
 python3 scripts/analyze_rvtools.py inventory.xlsx --include-poweredoff --output
+# try it with the bundled sample:
+python3 scripts/analyze_rvtools.py examples/rvtools-sample.xlsx
 ```
 
-Tell the user up front: RVTools has **no Azure region** (region is a target you
-pick, default `francecentral`) and is a point-in-time *allocation* snapshot, not
-performance data — for true right-sizing use Azure Migrate. Powered-off VMs and
-templates are excluded by default. Requires `openpyxl` (`pip install openpyxl`).
+**OS is auto-detected per VM** from the sheet's OS column (Windows rows are
+priced with the Windows rate; `--os` is only the fallback when the column is
+absent). Tell the user up front: RVTools has **no Azure region** (region is a
+target you pick, default `francecentral`) and is a point-in-time *allocation*
+snapshot, not performance data — for true right-sizing use Azure Migrate.
+Powered-off VMs and templates are excluded by default. Requires `openpyxl`
+(`pip install openpyxl`). A sample export lives at `examples/rvtools-sample.xlsx`.
 
 ## Scripts
 
@@ -98,7 +103,7 @@ When the user asks to save/export/deliver the quote as a file, add `--output`
 | `file` | required | Path to the RVTools `.xlsx` export |
 | `--region` / `-r` | francecentral | Target Azure region |
 | `--currency` / `-c` | EUR | Currency code |
-| `--os` | linux | `linux` or `windows` (headline totals) |
+| `--os` | linux | Fallback OS when the sheet has no OS column (OS is auto-detected per VM otherwise) |
 | `--disk-type` | premium-ssd | Disk type applied to every VM |
 | `--sheet` | auto | Worksheet name (auto-detects `vInfo`) |
 | `--include-poweredoff` | off | Include powered-off VMs |

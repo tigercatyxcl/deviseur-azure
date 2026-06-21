@@ -105,9 +105,15 @@ def _pick_sheet(wb, requested: Optional[str]):
     raise ValueError(f"No vInfo-like sheet found. Sheets: {wb.sheetnames}")
 
 
-def parse_rvtools(path: str, sheet: Optional[str],
-                  include_off: bool, include_templates: bool) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
-    """Read VM rows from an RVTools xlsx. Returns (vms, skipped_counts)."""
+def parse_rvtools(path: str, sheet: Optional[str], include_off: bool,
+                  include_templates: bool, default_os: str
+                  ) -> Tuple[List[Dict[str, Any]], Dict[str, int], bool]:
+    """Read VM rows from an RVTools xlsx.
+
+    Returns (vms, skipped_counts, os_column_found). Each VM's ``os`` is taken
+    from the sheet's OS column when present (Windows if the string contains
+    "win", else Linux), falling back to ``default_os``.
+    """
     import openpyxl
     wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
     ws = _pick_sheet(wb, sheet)
@@ -122,6 +128,8 @@ def parse_rvtools(path: str, sheet: Optional[str],
                             contains=["provisioned", "in use"])
     col_power = _find_column(headers, exact=["powerstate"], contains=["power"])
     col_tpl = _find_column(headers, exact=["template"], contains=["template"])
+    col_os = _find_column(headers, exact=["os", "guest os", "operating system"],
+                          contains=["os according", "guest os", "operating system"])
 
     if col_cpu is None or col_mem is None:
         raise ValueError(
@@ -161,17 +169,41 @@ def parse_rvtools(path: str, sheet: Optional[str],
 
         disk_gib = _unit_to_gib(_to_number(cell(col_disk)), disk_header) if col_disk is not None else None
 
+        os_raw = str(cell(col_os) or "").strip().lower() if col_os is not None else ""
+        vm_os = "windows" if "win" in os_raw else ("linux" if os_raw else default_os)
+
         vms.append({
             "name": str(cell(col_name) or "?").strip() if col_name is not None else "?",
             "vcpu": int(round(vcpu)),
             "ram_gib": round(ram_gib, 1),
             "disk_gib": round(disk_gib, 1) if disk_gib else None,
+            "os": vm_os,
+            "os_source": "sheet" if (col_os is not None and os_raw) else "default",
         })
 
-    return vms, skipped
+    return vms, skipped, (col_os is not None)
 
 
 # ── Pricing & mapping ──────────────────────────────────────────────────────
+
+def os_rates(prices: Dict[str, Optional[float]], vm_os: str) -> Tuple[Optional[float], Optional[float]]:
+    """Effective (PAYG, 1yr-Reserved) hourly rates for a VM given its OS.
+
+    Linux uses the base compute rate. Windows uses the Windows PAYG rate (which
+    bundles the licence); for the reserved column the RI discounts compute only,
+    so we add the Windows licence delta (windows − linux) back on top of the
+    base reservation, since the licence is not reservable (unless AHB is used).
+    """
+    linux = prices.get("linux")
+    windows = prices.get("windows")
+    reserved = prices.get("reserved_1yr")
+    if vm_os == "windows":
+        payg = windows if windows is not None else linux
+        licence = (windows - linux) if (windows is not None and linux is not None) else 0.0
+        resv = (reserved + licence) if reserved is not None else None
+        return payg, resv
+    return linux, reserved
+
 
 def map_vms(vms, args):
     """Attach an Azure flavor, disk tier and live prices to each VM. Prices are
@@ -191,6 +223,7 @@ def map_vms(vms, args):
         if sku and sku not in vm_price_cache:
             vm_price_cache[sku] = organize_vm_prices(query_vm_prices(sku, args.region, args.currency))
         vm["prices"] = vm_price_cache.get(sku, {})
+        vm["payg_hr"], vm["reserved_hr"] = os_rates(vm["prices"], vm["os"])
 
         if vm["disk_gib"]:
             info = disk_tier_for_size(vm["disk_gib"], args.disk_type, tiers)
@@ -212,9 +245,10 @@ def money(v, sym, dp=2):
     return "N/A" if v is None else f"{sym}{v:,.{dp}f}"
 
 
-def render(vms, skipped, args, sym):
+def render(vms, skipped, args, sym, os_detected):
     print(f"# Azure sizing from RVTools — {os.path.basename(args.file)}\n")
-    print(f"Target region **{args.region}** · {args.currency} · OS **{args.os}** · "
+    os_desc = "per-VM (from sheet)" if os_detected else f"**{args.os}** (default — no OS column)"
+    print(f"Target region **{args.region}** · {args.currency} · OS {os_desc} · "
           f"strategy **lift-and-shift** (meet-or-exceed source spec)\n")
 
     note_bits = [f"{len(vms)} VMs sized"]
@@ -231,25 +265,25 @@ def render(vms, skipped, args, sym):
               "or check the sheet has CPU/Memory columns.")
         return False
 
-    os_key = args.os
+    def vm_monthly(vm, hourly):
+        """Compute-only monthly cost for a given effective hourly rate."""
+        return None if hourly is None else hourly * HOURS_PER_MONTH
 
-    def vm_monthly(vm, hourly_key):
-        h = vm["prices"].get(hourly_key)
-        return None if h is None else h * HOURS_PER_MONTH
-
-    # --- Rollup totals ---
-    payg_vm = sum((vm_monthly(vm, os_key) or 0) for vm in vms)
-    res_vm = sum((vm_monthly(vm, "reserved_1yr") or 0) for vm in vms)
+    # --- Rollup totals (per-VM OS) ---
+    payg_vm = sum((vm_monthly(vm, vm["payg_hr"]) or 0) for vm in vms)
+    res_vm = sum((vm_monthly(vm, vm["reserved_hr"]) or 0) for vm in vms)
     disk_total = sum((vm["disk_monthly"] or 0) for vm in vms)
     payg_total = payg_vm + disk_total
     res_total = res_vm + disk_total
     total_vcpu = sum(vm["vcpu"] for vm in vms)
     total_ram = sum(vm["ram_gib"] for vm in vms)
+    n_win = sum(1 for vm in vms if vm["os"] == "windows")
+    n_lin = len(vms) - n_win
 
     print("## Summary\n")
     print("| Metric | Value |")
     print("|--------|-------|")
-    print(f"| VMs | {len(vms)} |")
+    print(f"| VMs | {len(vms)} ({n_win} Windows / {n_lin} Linux) |")
     print(f"| Source vCPU / RAM (allocated) | {total_vcpu} vCPU / {total_ram:,.0f} GiB |")
     print(f"| Compute PAYG | {money(payg_vm, sym)} /mo · {money(payg_vm * 12, sym)} /yr |")
     print(f"| Compute 1yr Reserved | {money(res_vm, sym)} /mo · {money(res_vm * 12, sym)} /yr |")
@@ -260,30 +294,33 @@ def render(vms, skipped, args, sym):
         save = (payg_total - res_total) / payg_total * 100
         print(f"| Reserved saving | -{save:.0f}% vs PAYG |")
 
-    # --- By-flavor rollup ---
+    # --- By-flavor rollup (unit PAYG can differ by OS within a SKU) ---
     by_flavor: Dict[str, Dict[str, Any]] = {}
     for vm in vms:
         sku = vm["flavor"]["sku"] if vm["flavor"] else "—"
         agg = by_flavor.setdefault(sku, {"count": 0, "flavor": vm["flavor"],
-                                         "unit": vm_monthly(vm, os_key)})
+                                         "subtotal": 0.0, "units": set()})
         agg["count"] += 1
+        unit_m = vm_monthly(vm, vm["payg_hr"])
+        agg["subtotal"] += unit_m or 0
+        agg["units"].add(round(unit_m, 2) if unit_m is not None else None)
     print("\n## By Azure flavor\n")
     print("| Azure SKU | Type | vCPU | RAM | Count | Unit PAYG /mo | Subtotal /mo |")
     print("|-----------|------|------|-----|-------|---------------|--------------|")
     for sku, agg in sorted(by_flavor.items(), key=lambda kv: -kv[1]["count"]):
         f = agg["flavor"]
-        unit = agg["unit"]
-        sub = None if unit is None else unit * agg["count"]
+        units = agg["units"]
+        unit_str = "mixed" if len(units) > 1 else money(next(iter(units)), sym)
         fam = FAMILY_LABEL.get(f["family"], f["family"]) if f else "?"
         vcpu = f["vcpu"] if f else "?"
         ram = f"{f['ram_gib']} GiB" if f else "?"
         print(f"| {sku} | {fam} | {vcpu} | {ram} | {agg['count']} "
-              f"| {money(unit, sym)} | {money(sub, sym)} |")
+              f"| {unit_str} | {money(agg['subtotal'], sym)} |")
 
     # --- Per-VM detail ---
     print("\n## Per-VM mapping\n")
-    print("| VM | Src vCPU/RAM | Src disk | → Azure SKU | vCPU/RAM | Disk tier | PAYG /mo | 1yr /mo |")
-    print("|----|--------------|----------|-------------|----------|-----------|----------|---------|")
+    print("| VM | OS | Src vCPU/RAM | Src disk | → Azure SKU | vCPU/RAM | Disk tier | PAYG /mo | 1yr /mo |")
+    print("|----|----|--------------|----------|-------------|----------|-----------|----------|---------|")
     for vm in vms:
         f = vm["flavor"]
         sku = f["sku"] if f else "—"
@@ -291,17 +328,26 @@ def render(vms, skipped, args, sym):
         flag = " ⚠️" if vm["undersized"] else ""
         src_disk = f"{vm['disk_gib']:g}G" if vm["disk_gib"] else "—"
         tier = vm["disk_tier"]["sku_name"] if vm["disk_tier"] else "—"
-        vm_m = vm_monthly(vm, os_key)
-        res_m = vm_monthly(vm, "reserved_1yr")
+        os_cell = vm["os"][:3].capitalize() + ("*" if vm["os_source"] == "default" else "")
+        vm_m = vm_monthly(vm, vm["payg_hr"])
+        res_m = vm_monthly(vm, vm["reserved_hr"])
         disk_m = vm["disk_monthly"] or 0
         payg = None if vm_m is None else vm_m + disk_m
         resv = None if res_m is None else res_m + disk_m
-        print(f"| {vm['name']} | {vm['vcpu']} / {vm['ram_gib']:g}G | {src_disk} "
+        print(f"| {vm['name']} | {os_cell} | {vm['vcpu']} / {vm['ram_gib']:g}G | {src_disk} "
               f"| {sku}{flag} | {az_spec} | {tier} | {money(payg, sym)} | {money(resv, sym)} |")
 
     if any(vm["undersized"] for vm in vms):
         print("\n> ⚠️ = no catalog flavor large enough; largest available was used. "
               "Extend `references/vm-catalog.json` (e.g. GPU/large sizes).")
+
+    if not os_detected:
+        print(f"\n> No OS column found in the sheet — all VMs priced as **{args.os}** "
+              f"(override with `--os`). VMs marked `*` used this default.")
+    else:
+        print("\n> OS detected per VM from the sheet. Windows rows use the Windows PAYG "
+              "rate (licence included); the 1yr column keeps the Windows licence at PAYG "
+              "on top of the base reservation (assume Azure Hybrid Benefit to drop it).")
 
     print("\n> Lift-and-shift: each VM mapped to the cheapest flavor meeting-or-exceeding "
           "its **allocated** vCPU/RAM. RVTools is a point-in-time allocation snapshot "
@@ -323,7 +369,8 @@ def main():
     p.add_argument("--region", "-r", default="francecentral", help="Target Azure region (default: francecentral)")
     p.add_argument("--currency", "-c", default="EUR", help="Currency code (default: EUR)")
     p.add_argument("--os", default="linux", choices=["linux", "windows"],
-                   help="OS for the headline totals (default: linux)")
+                   help="Fallback OS when the sheet has no OS column or a row is blank "
+                        "(default: linux). OS is auto-detected per VM otherwise.")
     p.add_argument("--disk-type", default="premium-ssd",
                    choices=["premium-ssd", "standard-ssd", "standard-hdd"],
                    help="Managed disk type for all VMs (default: premium-ssd)")
@@ -341,8 +388,9 @@ def main():
 
     sym = currency_symbol(args.currency)
     try:
-        vms, skipped = parse_rvtools(args.file, args.sheet,
-                                     args.include_poweredoff, args.include_templates)
+        vms, skipped, os_detected = parse_rvtools(
+            args.file, args.sheet, args.include_poweredoff,
+            args.include_templates, args.os)
     except Exception as e:
         print(f"Failed to parse RVTools file: {e}", file=sys.stderr)
         sys.exit(1)
@@ -351,7 +399,7 @@ def main():
 
     buf = io.StringIO()
     with redirect_stdout(buf):
-        ok = render(vms, skipped, args, sym)
+        ok = render(vms, skipped, args, sym, os_detected)
     text = buf.getvalue()
     print(text, end="" if text.endswith("\n") else "\n")
 

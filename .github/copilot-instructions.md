@@ -54,12 +54,14 @@ totals for a target region. Needs `openpyxl`.
 ```bash
 python3 scripts/analyze_rvtools.py inventory.xlsx --region francecentral
 python3 scripts/analyze_rvtools.py inventory.xlsx --include-poweredoff --output
+python3 scripts/analyze_rvtools.py examples/rvtools-sample.xlsx   # bundled sample
 ```
 
-Caveats to state: RVTools has no Azure region (you pick the target, default
-`francecentral`) and is an allocation snapshot, not performance data (for
-right-sizing use Azure Migrate). Powered-off VMs and templates are excluded by
-default.
+OS is auto-detected per VM from the sheet (Windows priced with the Windows rate;
+`--os` is the fallback when there is no OS column). Caveats to state: RVTools has
+no Azure region (you pick the target, default `francecentral`) and is an
+allocation snapshot, not performance data (for right-sizing use Azure Migrate).
+Powered-off VMs and templates are excluded by default.
 
 ## Script options (quick reference)
 

@@ -130,12 +130,19 @@ python3 scripts/analyze_rvtools.py inventory.xlsx --region francecentral
 
 # 含关机 VM，并把报告写到 quotes/ 下
 python3 scripts/analyze_rvtools.py inventory.xlsx --include-poweredoff --output
+
+# 用仓库自带的样例文件直接试跑
+python3 scripts/analyze_rvtools.py examples/rvtools-sample.xlsx
 ```
+
+**操作系统逐台自动识别**：脚本读取表里的 OS 列——Windows VM 用 Windows 价(含许可证；
+预留列里许可证仍按 PAYG 计，即假定用 Azure Hybrid Benefit 才能去掉)，Linux 用基础价。
+`--os` 仅在表里没有 OS 列时作为兜底。
 
 > **注意：** RVTools 里**不含 Azure 区域**——区域是你选的目标(默认 `francecentral`)。
 > 它也只是某一时刻的**分配**快照、不是性能数据，所以这是「原样搬」估算；要做基于性能的
-> 瘦身(right-sizing)请用 Azure Migrate。默认排除关机 VM 与模板；`--os`/`--disk-type`
-> 对所有 VM 统一生效。
+> 瘦身(right-sizing)请用 Azure Migrate。默认排除关机 VM 与模板；`--disk-type` 对所有
+> VM 统一生效。仓库自带样例：[`examples/rvtools-sample.xlsx`](examples/rvtools-sample.xlsx)。
 
 ---
 
@@ -168,7 +175,7 @@ python3 scripts/analyze_rvtools.py inventory.xlsx --include-poweredoff --output
 | `file` | 必填 | RVTools `.xlsx` 导出文件路径 |
 | `--region` / `-r` | francecentral | 目标 Azure 区域 |
 | `--currency` / `-c` | EUR | 货币代码 |
-| `--os` | linux | `linux` 或 `windows`（汇总用哪种 OS） |
+| `--os` | linux | 表里无 OS 列时的兜底 OS（否则逐台自动识别） |
 | `--disk-type` | premium-ssd | 对所有 VM 统一的磁盘类型 |
 | `--sheet` | 自动 | 工作表名（自动识别 `vInfo`） |
 | `--include-poweredoff` | 关 | 包含关机 VM |
