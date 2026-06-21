@@ -1,6 +1,6 @@
 ---
 name: deviseur-azure
-description: Azure pre-sales quoting from a hardware spec. Use when a user describes a VM by specs (e.g. "4U8G, 25G SSD", "4 vCPU 8GB", "8 cores 64GB memory") and wants Azure pricing or a quote. Two-step flow - first PROPOSE several matching Azure flavors (SKUs) across families with live prices in a region, let the user pick one, then output a full region QUOTE including managed disk and monthly/annual totals. Defaults to francecentral region and EUR currency.
+description: Azure pre-sales quoting from a hardware spec. Use when a user describes a VM by specs (e.g. "4U8G, 25G SSD", "4 vCPU 8GB", "8 cores 64GB memory") and wants Azure pricing or a quote. Two-step flow - first PROPOSE several matching Azure flavors (SKUs) across families with live prices in a region, let the user pick one, then output a full region QUOTE including managed disk and monthly/annual totals. Also supports BATCH sizing from a VMware RVTools .xlsx export (vInfo sheet) - lift-and-shift map every VM to the cheapest meet-or-exceed Azure flavor with rollup totals. Defaults to francecentral region and EUR currency.
 version: 1.0.0
 platforms: [linux, macos, windows]
 metadata:
@@ -47,6 +47,25 @@ python3 scripts/query_quote.py --sku Standard_F4s_v2 --region francecentral \
 Display the full output: VM compute table, managed disk, and combined total
 (with the 1yr-reserved saving note).
 
+## Batch mode — RVTools import
+
+When the user provides a VMware **RVTools** export (`.xlsx`) and wants the whole
+estate sized, skip the interactive flavor pick and run the batch analyzer. It
+reads the `vInfo` sheet and, per VM, maps the allocated vCPU/RAM/disk to the
+cheapest Azure flavor that **meets-or-exceeds** it (lift-and-shift), then prints
+per-VM mapping plus rollup totals (PAYG + 1yr Reserved) for a target region.
+
+```bash
+python3 scripts/analyze_rvtools.py inventory.xlsx --region francecentral
+# include powered-off VMs / write a Markdown report:
+python3 scripts/analyze_rvtools.py inventory.xlsx --include-poweredoff --output
+```
+
+Tell the user up front: RVTools has **no Azure region** (region is a target you
+pick, default `francecentral`) and is a point-in-time *allocation* snapshot, not
+performance data — for true right-sizing use Azure Migrate. Powered-off VMs and
+templates are excluded by default. Requires `openpyxl` (`pip install openpyxl`).
+
 ## Scripts
 
 ### propose_flavors.py
@@ -72,6 +91,19 @@ Display the full output: VM compute table, managed disk, and combined total
 
 When the user asks to save/export/deliver the quote as a file, add `--output`
 (bare for an auto-named file under `quotes/`, or with a PATH).
+
+### analyze_rvtools.py
+| Option | Default | Notes |
+|--------|---------|-------|
+| `file` | required | Path to the RVTools `.xlsx` export |
+| `--region` / `-r` | francecentral | Target Azure region |
+| `--currency` / `-c` | EUR | Currency code |
+| `--os` | linux | `linux` or `windows` (headline totals) |
+| `--disk-type` | premium-ssd | Disk type applied to every VM |
+| `--sheet` | auto | Worksheet name (auto-detects `vInfo`) |
+| `--include-poweredoff` | off | Include powered-off VMs |
+| `--include-templates` | off | Include VM templates |
+| `--output` / `-o` | none | Write Markdown report; bare flag auto-names under `quotes/`, or pass a PATH |
 
 ## Pricing notes (important for correct quotes)
 

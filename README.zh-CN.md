@@ -118,6 +118,25 @@ python3 scripts/query_quote.py --sku D4as_v5 --disk-size 25 --output
 python3 scripts/query_quote.py --sku D4as_v5 --disk-size 25 --output /tmp/quote.md
 ```
 
+### 批量模式：从 RVTools 导出整批评估
+
+已经有一份 VMware [RVTools](https://www.robware.net/rvtools/) 导出？可以跳过交互式流程，
+一次性给所有 VM 评估。脚本读取 `vInfo` 表，把每台 VM 的**分配** vCPU/内存/磁盘映射到
+**满足或超过**它的最便宜 Azure 机型（lift-and-shift / 原样搬），再输出逐台映射 +
+汇总总价（按需 + 1 年预留）。需要 `openpyxl`（已在 `requirements.txt` 里）。
+
+```bash
+python3 scripts/analyze_rvtools.py inventory.xlsx --region francecentral
+
+# 含关机 VM，并把报告写到 quotes/ 下
+python3 scripts/analyze_rvtools.py inventory.xlsx --include-poweredoff --output
+```
+
+> **注意：** RVTools 里**不含 Azure 区域**——区域是你选的目标(默认 `francecentral`)。
+> 它也只是某一时刻的**分配**快照、不是性能数据，所以这是「原样搬」估算；要做基于性能的
+> 瘦身(right-sizing)请用 Azure Migrate。默认排除关机 VM 与模板；`--os`/`--disk-type`
+> 对所有 VM 统一生效。
+
 ---
 
 ## 4. 参数速查
@@ -142,6 +161,19 @@ python3 scripts/query_quote.py --sku D4as_v5 --disk-size 25 --output /tmp/quote.
 | `--disk-size` | 无 | 磁盘大小 GiB（向上取整到档位） |
 | `--disk-type` | premium-ssd | `premium-ssd` / `standard-ssd` / `standard-hdd` |
 | `--output` / `-o` | 无 | 导出 Markdown；裸标志自动命名，或传 PATH。仍会回显屏幕 |
+
+### analyze_rvtools.py
+| 参数 | 默认 | 说明 |
+|------|------|------|
+| `file` | 必填 | RVTools `.xlsx` 导出文件路径 |
+| `--region` / `-r` | francecentral | 目标 Azure 区域 |
+| `--currency` / `-c` | EUR | 货币代码 |
+| `--os` | linux | `linux` 或 `windows`（汇总用哪种 OS） |
+| `--disk-type` | premium-ssd | 对所有 VM 统一的磁盘类型 |
+| `--sheet` | 自动 | 工作表名（自动识别 `vInfo`） |
+| `--include-poweredoff` | 关 | 包含关机 VM |
+| `--include-templates` | 关 | 包含 VM 模板 |
+| `--output` / `-o` | 无 | 导出 Markdown 报告；裸标志自动命名到 `quotes/`，或传 PATH |
 
 ---
 
@@ -170,6 +202,8 @@ python3 scripts/query_quote.py --sku D4as_v5 --disk-size 25 --output /tmp/quote.
 | 现象 | 排查 |
 |------|------|
 | `ModuleNotFoundError: requests` | `pip install -r requirements.txt` |
+| `ModuleNotFoundError: openpyxl`（RVTools 模式） | `pip install openpyxl`（或 `-r requirements.txt`） |
+| RVTools 提示找不到 CPU/Memory 列 | 用 `--sheet vInfo` 指定，或确认导出含 `CPUs` + `Memory` 列 |
 | 价格全是 N/A | 该 SKU 在此 region 不可用；换 region，或确认 SKU 名拼写 |
 | 连接超时 | 检查网络是否能访问 `prices.azure.com`（公司代理/防火墙） |
 | Copilot 不自动跑脚本 | 需用 agent mode；普通补全不执行命令 |

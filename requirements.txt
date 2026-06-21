@@ -1,1 +1,2 @@
 requests>=2.28
+openpyxl>=3.1  # only needed for scripts/analyze_rvtools.py (RVTools xlsx)

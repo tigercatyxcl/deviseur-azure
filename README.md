@@ -127,6 +127,28 @@ python3 scripts/query_quote.py --sku D4as_v5 --disk-size 25 --output
 python3 scripts/query_quote.py --sku D4as_v5 --disk-size 25 --output /tmp/quote.md
 ```
 
+### Batch mode — size a whole estate from RVTools
+
+Already have a VMware [RVTools](https://www.robware.net/rvtools/) export? Skip the
+interactive flow and size every VM at once. The analyzer reads the `vInfo` sheet
+and maps each VM's allocated vCPU/RAM/disk to the cheapest Azure flavor that
+**meets-or-exceeds** it (lift-and-shift), then prints a per-VM mapping plus
+rollup totals (PAYG + 1yr Reserved). Needs `openpyxl` (already in
+`requirements.txt`).
+
+```bash
+python3 scripts/analyze_rvtools.py inventory.xlsx --region francecentral
+
+# include powered-off VMs and write a Markdown report under quotes/
+python3 scripts/analyze_rvtools.py inventory.xlsx --include-poweredoff --output
+```
+
+> **Heads-up:** RVTools contains **no Azure region** — region is a target you
+> choose (default `francecentral`). It's also a point-in-time *allocation*
+> snapshot, not performance data, so this is a lift-and-shift estimate; for
+> performance-based right-sizing use Azure Migrate. Powered-off VMs and templates
+> are excluded by default; one `--os`/`--disk-type` applies to all VMs.
+
 ---
 
 ## 4. Options reference
@@ -151,6 +173,19 @@ python3 scripts/query_quote.py --sku D4as_v5 --disk-size 25 --output /tmp/quote.
 | `--disk-size` | none | Disk size in GiB (rounded up to next tier) |
 | `--disk-type` | premium-ssd | `premium-ssd` / `standard-ssd` / `standard-hdd` |
 | `--output` / `-o` | none | Export Markdown; bare flag auto-names, or pass a PATH. Still echoes to screen |
+
+### analyze_rvtools.py
+| Option | Default | Notes |
+|--------|---------|-------|
+| `file` | required | Path to the RVTools `.xlsx` export |
+| `--region` / `-r` | francecentral | Target Azure region |
+| `--currency` / `-c` | EUR | Currency code |
+| `--os` | linux | `linux` or `windows` (headline totals) |
+| `--disk-type` | premium-ssd | Disk type applied to every VM |
+| `--sheet` | auto | Worksheet name (auto-detects `vInfo`) |
+| `--include-poweredoff` | off | Include powered-off VMs |
+| `--include-templates` | off | Include VM templates |
+| `--output` / `-o` | none | Export Markdown report; bare flag auto-names under `quotes/`, or pass a PATH |
 
 ---
 
@@ -184,6 +219,8 @@ python3 scripts/query_quote.py --sku D4as_v5 --disk-size 25 --output /tmp/quote.
 | Symptom | Fix |
 |---------|-----|
 | `ModuleNotFoundError: requests` | `pip install -r requirements.txt` |
+| `ModuleNotFoundError: openpyxl` (RVTools mode) | `pip install openpyxl` (or `-r requirements.txt`) |
+| RVTools: "Could not find CPU/Memory columns" | Point `--sheet vInfo`, or confirm the export has `CPUs` + `Memory` columns |
 | All prices show N/A | SKU not available in that region; change region or check the SKU name |
 | Connection timeout | Check access to `prices.azure.com` (corporate proxy/firewall) |
 | Copilot doesn't run scripts | Use agent mode; inline completion does not execute commands |

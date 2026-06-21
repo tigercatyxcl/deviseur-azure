@@ -43,12 +43,33 @@ Show the full output (VM compute, disk, and the PAYG/Spot/1yr/3yr commitment
 table). To export the quote as a Markdown file, add `--output` (bare flag →
 `quotes/quote-<sku>-<region>-<date>.md`, or pass a PATH).
 
+## Batch mode — RVTools import
+
+When the user provides a VMware **RVTools** export (`.xlsx`) instead of one spec,
+run the batch analyzer (not the two-step flow). It reads the `vInfo` sheet and
+maps each VM's allocated vCPU/RAM/disk to the cheapest Azure flavor that
+**meets-or-exceeds** it (lift-and-shift), then prints per-VM mapping plus rollup
+totals for a target region. Needs `openpyxl`.
+
+```bash
+python3 scripts/analyze_rvtools.py inventory.xlsx --region francecentral
+python3 scripts/analyze_rvtools.py inventory.xlsx --include-poweredoff --output
+```
+
+Caveats to state: RVTools has no Azure region (you pick the target, default
+`francecentral`) and is an allocation snapshot, not performance data (for
+right-sizing use Azure Migrate). Powered-off VMs and templates are excluded by
+default.
+
 ## Script options (quick reference)
 
 - `propose_flavors.py`: `--vcpu` (req), `--ram` (req), `--region`, `--currency`, `--max`
 - `query_quote.py`: `--sku` (req), `--region`, `--currency`, `--os {linux,windows}`,
   `--qty`, `--disk-size`, `--disk-type {premium-ssd,standard-ssd,standard-hdd}`,
   `--output [PATH]`
+- `analyze_rvtools.py`: `file` (req), `--region`, `--currency`, `--os {linux,windows}`,
+  `--disk-type {premium-ssd,standard-ssd,standard-hdd}`, `--sheet`,
+  `--include-poweredoff`, `--include-templates`, `--output [PATH]`
 
 ## Pricing notes (these are correct — do not "fix" them)
 

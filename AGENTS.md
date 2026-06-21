@@ -70,6 +70,24 @@ across all commitment options (PAYG / Spot / 1yr / 3yr Reserved).
 To save/export/deliver the quote as a Markdown file, add `--output` (bare flag
 auto-names it under `quotes/`, or pass a PATH).
 
+## Batch mode — RVTools import
+
+When the user supplies a VMware **RVTools** export (`.xlsx`) instead of a single
+spec, run the batch analyzer rather than the two-step flow. It reads the
+`vInfo` sheet and, per VM, maps allocated vCPU/RAM/disk to the cheapest Azure
+flavor that **meets-or-exceeds** it (lift-and-shift), then prints per-VM mapping
+plus rollup totals (PAYG + 1yr Reserved) for a target region.
+
+```bash
+python3 scripts/analyze_rvtools.py inventory.xlsx --region francecentral
+python3 scripts/analyze_rvtools.py inventory.xlsx --include-poweredoff --output
+```
+
+State the caveats: RVTools has **no Azure region** (region is a target choice,
+default `francecentral`) and is a point-in-time *allocation* snapshot, not
+performance data — for right-sizing use Azure Migrate. Powered-off VMs and
+templates are excluded by default. Needs `openpyxl`.
+
 ## Scripts
 
 ### propose_flavors.py
@@ -80,6 +98,19 @@ auto-names it under `quotes/`, or pass a PATH).
 | `--region` / `-r` | francecentral | Azure region |
 | `--currency` / `-c` | EUR | Currency code |
 | `--max` | 6 | Max candidates |
+
+### analyze_rvtools.py
+| Option | Default | Notes |
+|--------|---------|-------|
+| `file` | required | Path to the RVTools `.xlsx` export |
+| `--region` / `-r` | francecentral | Target Azure region |
+| `--currency` / `-c` | EUR | Currency code |
+| `--os` | linux | `linux` or `windows` (headline totals) |
+| `--disk-type` | premium-ssd | Disk type applied to every VM |
+| `--sheet` | auto | Worksheet name (auto-detects `vInfo`) |
+| `--include-poweredoff` | off | Include powered-off VMs |
+| `--include-templates` | off | Include VM templates |
+| `--output` / `-o` | none | Write Markdown report; bare flag auto-names under `quotes/`, or a PATH |
 
 ### query_quote.py
 | Option | Default | Notes |

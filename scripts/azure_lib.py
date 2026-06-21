@@ -38,6 +38,31 @@ def load_disk_tiers() -> Dict[str, Any]:
         return json.load(f)
 
 
+# Preference order when several flavors fit equally well. General-purpose (D)
+# is the safe default for unknown lift-and-shift workloads, then Compute (F),
+# Memory (E), Burstable (B) last (B throttles under steady load).
+FAMILY_PREFERENCE = {"D": 0, "F": 1, "E": 2, "B": 3}
+
+
+def pick_flavor(catalog: List[Dict[str, Any]], vcpu: int, ram_gib: float) -> Optional[Dict[str, Any]]:
+    """Pick the cheapest catalog flavor that meets-or-exceeds a source spec.
+
+    Lift-and-shift semantics: never under-provision. Among flavors with
+    ``vcpu >= source`` and ``ram_gib >= source``, choose the smallest by vCPU
+    then RAM (vCPU dominates price), tie-broken by family preference. If nothing
+    is large enough, fall back to the single largest flavor in the catalog.
+    """
+    fits = [s for s in catalog if s["vcpu"] >= vcpu and s["ram_gib"] >= ram_gib]
+    if fits:
+        fits.sort(key=lambda s: (s["vcpu"], s["ram_gib"],
+                                 FAMILY_PREFERENCE.get(s["family"], 9), s["sku"]))
+        return fits[0]
+    if not catalog:
+        return None
+    # Nothing fits — return the biggest available so the caller can flag it.
+    return max(catalog, key=lambda s: (s["vcpu"], s["ram_gib"]))
+
+
 def normalize_sku(sku: str) -> str:
     """Ensure a SKU name has the Standard_ prefix."""
     sku = sku.strip()
