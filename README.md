@@ -103,8 +103,8 @@ python3 scripts/propose_flavors.py --vcpu 4 --ram 8 --region francecentral
 
 Outputs candidates across families (Burstable / General / Memory / Compute),
 the recommended D-series (RAM meets-or-exceeds, vCPU floored to the nearest size
-just below) first, with Linux €/hr, €/month, and 1yr reserved €/month.
-**Pick one flavor.**
+just below) first, each with the Linux monthly price across all four commitment
+options — **PAYG, Spot, 1yr Reserved, 3yr Reserved**. **Pick one flavor.**
 
 ### Step 2 — Full quote
 

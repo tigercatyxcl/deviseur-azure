@@ -54,8 +54,9 @@ Do NOT skip ahead to the quote — the user chooses first.
 
 The table shows candidates across families (Burstable / General / Memory /
 Compute), the recommended D-series first (per the **Sizing rule** above — RAM
-meets-or-exceeds, vCPU floored to the nearest size just below), with Linux €/hr,
-€/month, and 1yr reserved €/month.
+meets-or-exceeds, vCPU floored to the nearest size just below). Every row lists
+the Linux monthly price across **all four commitment options — PAYG, Spot, 1yr
+Reserved, 3yr Reserved** (N/A where a family has no such rate).
 
 ### Step 2 — Quote the chosen flavor
 Once the user picks a flavor, capture the disk requirement from the original

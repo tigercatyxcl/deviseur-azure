@@ -96,7 +96,7 @@ python3 scripts/propose_flavors.py --vcpu 4 --ram 8 --region francecentral
 
 输出一张跨家族（Burstable / General / Memory / Compute）的候选表，推荐的 D 系列排在最前
 （按**配置规则**：内存等于或大于、vCPU 向下取到紧邻的较小标准规格），
-含 Linux €/小时、€/月、1 年预留 €/月。**从中选一个机型。**
+每行给出 Linux 月价的全部四档承诺：**PAYG、Spot、1 年预留、3 年预留**。**从中选一个机型。**
 
 ### 第 2 步：整机报价（quote）
 

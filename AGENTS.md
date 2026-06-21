@@ -69,8 +69,9 @@ python3 scripts/propose_flavors.py --vcpu 4 --ram 8 --region francecentral
 ```
 
 Show the full proposal table (candidates across Burstable/General/Memory/Compute
-families, recommended D-series first per the sizing rule above), then ask the
-user to pick a flavor.
+families, recommended D-series first per the sizing rule above; each row lists
+the Linux monthly price across all four commitment options — PAYG / Spot / 1yr /
+3yr Reserved), then ask the user to pick a flavor.
 
 ### Step 2 — Quote the chosen flavor
 Capture the disk requirement from the spec ("25G SSD" → `--disk-size 25

@@ -53,14 +53,6 @@ def rank_candidates(catalog, vcpu, ram, max_results):
     return out
 
 
-def fmt(price, sym):
-    return "N/A" if price is None else f"{sym}{price:.4f}"
-
-
-def fmt_month(price, sym):
-    return "N/A" if price is None else f"{sym}{price * HOURS_PER_MONTH:,.2f}"
-
-
 def main():
     p = argparse.ArgumentParser(description="Propose Azure VM flavors for a hardware spec")
     p.add_argument("--vcpu", "-v", type=int, required=True, help="Number of vCPUs (e.g. 4)")
@@ -88,20 +80,26 @@ def main():
 
     fam_label = {"B": "Burstable", "D": "General", "E": "Memory", "F": "Compute"}
 
+    def mo(price):
+        return "N/A" if price is None else f"{sym}{price * HOURS_PER_MONTH:,.2f}"
+
     print(f"## Flavor proposals — {args.vcpu} vCPU / {args.ram:g} GiB @ {args.region}\n")
-    print("| # | Flavor | Type | vCPU | RAM | Linux/hr | Linux/mo | 1yr Res/mo |")
-    print("|---|--------|------|------|-----|----------|----------|------------|")
+    print("All prices are Linux, €/month per VM, across every commitment option.\n")
+    print("| # | Flavor | Type | vCPU | RAM | PAYG/mo | Spot/mo | 1yr Res/mo | 3yr Res/mo |")
+    print("|---|--------|------|------|-----|---------|---------|------------|------------|")
     for i, (c, pr) in enumerate(rows, 1):
-        res_mo = pr["reserved_1yr"]
-        res_mo_val = "N/A" if res_mo is None else f"{sym}{res_mo * HOURS_PER_MONTH:,.2f}"
         print(f"| {i} | {c['sku']} | {fam_label.get(c['family'], c['family'])} "
               f"| {c['vcpu']} | {c['ram_gib']} GiB "
-              f"| {fmt(pr['linux'], sym)} | {fmt_month(pr['linux'], sym)} | {res_mo_val} |")
+              f"| {mo(pr['linux'])} | {mo(pr['spot'])} "
+              f"| {mo(pr['reserved_1yr'])} | {mo(pr['reserved_3yr'])} |")
 
     print("\n> Sizing rule: **RAM meets-or-exceeds** your spec, while **vCPU may sit "
           "just below** it (Azure has no odd-core sizes — 3 vCPU → 2). The recommended "
           "D-family (\"Standard\" general-purpose) flavor is listed first; "
           "Burstable (B) is cheapest for low steady load, Memory (E) gives more RAM/vCPU.")
+    print("> PAYG = pay-as-you-go on-demand; Spot = interruptible (deepest discount, "
+          "no SLA); 1yr/3yr Res = reserved-instance commitment (amortized monthly). "
+          "Some families (e.g. Spot/3yr on F or B) may show N/A where Azure has no such rate.")
     print(f"\n**Next:** pick a flavor, then run the quote:\n"
           f"`python3 scripts/query_quote.py --sku <Flavor> --region {args.region} "
           f"--disk-size <GiB> --disk-type premium-ssd`")
