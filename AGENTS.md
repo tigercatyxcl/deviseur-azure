@@ -5,7 +5,22 @@ Project instructions for coding agents (OpenAI Codex, and any tool that reads
 
 > Claude Code users: the same workflow lives in `SKILL.md`.
 > GitHub Copilot users: see `.github/copilot-instructions.md`.
-> All three share the same `scripts/` and `references/` — do not fork the logic.
+> Hermes Agent users: this repo IS a Hermes skill (`SKILL.md` frontmatter is
+> Hermes-compatible). Register it without copying the code by adding the repo
+> path to `skills.external_dirs` in your Hermes `config.yaml` (per active
+> profile under `~/.hermes/profiles/<name>/config.yaml`, or the default
+> `~/.hermes/config.yaml`):
+>
+> ```yaml
+> skills:
+>   external_dirs:
+>     - /path/to/deviseur-azure
+> ```
+>
+> Hermes discovers `SKILL.md`, injects the absolute `[Skill directory: …]`, and
+> the agent runs the same `scripts/` via its shell. Requires `requests` in the
+> Python env Hermes shells into.
+> All of these share the same `scripts/` and `references/` — do not fork the logic.
 
 ## What this does
 

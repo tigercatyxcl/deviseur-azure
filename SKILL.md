@@ -1,6 +1,12 @@
 ---
 name: deviseur-azure
 description: Azure pre-sales quoting from a hardware spec. Use when a user describes a VM by specs (e.g. "4U8G, 25G SSD", "4 vCPU 8GB", "8 cores 64GB memory") and wants Azure pricing or a quote. Two-step flow - first PROPOSE several matching Azure flavors (SKUs) across families with live prices in a region, let the user pick one, then output a full region QUOTE including managed disk and monthly/annual totals. Defaults to francecentral region and EUR currency.
+version: 1.0.0
+platforms: [linux, macos, windows]
+metadata:
+  hermes:
+    tags: [azure, pricing, quoting, pre-sales, vm, cloud, devops]
+    related_skills: []
 ---
 
 # Deviseur Azure
