@@ -94,7 +94,8 @@ shell 跑同一套 `scripts/`——所以改了仓库立即生效，无需重新
 python3 scripts/propose_flavors.py --vcpu 4 --ram 8 --region francecentral
 ```
 
-输出一张跨家族（Burstable / General / Memory / Compute）的候选表，精确匹配项排在最前，
+输出一张跨家族（Burstable / General / Memory / Compute）的候选表，推荐的 D 系列排在最前
+（按**配置规则**：内存等于或大于、vCPU 向下取到紧邻的较小标准规格），
 含 Linux €/小时、€/月、1 年预留 €/月。**从中选一个机型。**
 
 ### 第 2 步：整机报价（quote）
@@ -121,9 +122,10 @@ python3 scripts/query_quote.py --sku D4as_v5 --disk-size 25 --output /tmp/quote.
 ### 批量模式：从 RVTools 导出整批评估
 
 已经有一份 VMware [RVTools](https://www.robware.net/rvtools/) 导出？可以跳过交互式流程，
-一次性给所有 VM 评估。脚本读取 `vInfo` 表，把每台 VM 的**分配** vCPU/内存/磁盘映射到
-**满足或超过**它的最便宜 Azure 机型（lift-and-shift / 原样搬），再输出逐台映射 +
-汇总总价（按需 + 1 年预留）。需要 `openpyxl`（已在 `requirements.txt` 里）。
+一次性给所有 VM 评估。脚本读取 `vInfo` 表，把每台 VM 的**分配** vCPU/内存/磁盘按
+**配置规则**映射到优先 D 系列的 Azure 机型（**内存必须等于或大于**原配置，**vCPU 可
+向下取到紧邻的较小标准规格**），再输出逐台映射 + 汇总总价（按需 + 1 年预留）。需要
+`openpyxl`（已在 `requirements.txt` 里）。
 
 ```bash
 python3 scripts/analyze_rvtools.py inventory.xlsx --region francecentral
@@ -140,7 +142,7 @@ python3 scripts/analyze_rvtools.py examples/rvtools-sample.xlsx
 `--os` 仅在表里没有 OS 列时作为兜底。
 
 > **注意：** RVTools 里**不含 Azure 区域**——区域是你选的目标(默认 `francecentral`)。
-> 它也只是某一时刻的**分配**快照、不是性能数据，所以这是「原样搬」估算；要做基于性能的
+> 它也只是某一时刻的**分配**快照、不是性能数据，所以这是基于「分配量」的估算；要做基于性能的
 > 瘦身(right-sizing)请用 Azure Migrate。默认排除关机 VM 与模板；`--disk-type` 对所有
 > VM 统一生效。仓库自带样例：[`examples/rvtools-sample.xlsx`](examples/rvtools-sample.xlsx)。
 

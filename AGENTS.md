@@ -38,6 +38,22 @@ vCPU/RAM metadata, so the catalog supplies it).
 - `pip install requests`
 - Network access to `prices.azure.com` (no auth/API key needed)
 
+## Sizing rule (specs that don't match an Azure standard size)
+
+Azure vCPUs come in a fixed grid (1, 2, 4, 8, 16, 32 …). When a spec falls
+between sizes:
+
+- **RAM must meet-or-exceed** the customer's RAM — never under-provision memory.
+- **vCPU may sit just below** the customer's vCPU — floor the core count to the
+  nearest Azure size instead of rounding up (3 vCPU → 2).
+- **Prefer the D family** ("Standard" general-purpose) when it satisfies the RAM
+  floor; fall back to E (memory) only when D can't meet the RAM at that core
+  count, then F/B.
+
+Example: `3U4G` → recommend `D2s_v5`-style sizing (2 vCPU, RAM ≥ 4 GiB, D-series).
+Implemented in `pick_flavor` / `target_vcpu` (`scripts/azure_lib.py`); drives
+both the interactive proposal and the RVTools batch mapping.
+
 ## Workflow — TWO steps, always interactive
 
 When the user describes a VM by specs (e.g. "4U8G, 25G SSD", "4 vCPU 8GB",
@@ -53,7 +69,8 @@ python3 scripts/propose_flavors.py --vcpu 4 --ram 8 --region francecentral
 ```
 
 Show the full proposal table (candidates across Burstable/General/Memory/Compute
-families, exact-spec match first), then ask the user to pick a flavor.
+families, recommended D-series first per the sizing rule above), then ask the
+user to pick a flavor.
 
 ### Step 2 — Quote the chosen flavor
 Capture the disk requirement from the spec ("25G SSD" → `--disk-size 25
@@ -74,9 +91,10 @@ auto-names it under `quotes/`, or pass a PATH).
 
 When the user supplies a VMware **RVTools** export (`.xlsx`) instead of a single
 spec, run the batch analyzer rather than the two-step flow. It reads the
-`vInfo` sheet and, per VM, maps allocated vCPU/RAM/disk to the cheapest Azure
-flavor that **meets-or-exceeds** it (lift-and-shift), then prints per-VM mapping
-plus rollup totals (PAYG + 1yr Reserved) for a target region.
+`vInfo` sheet and, per VM, maps allocated vCPU/RAM/disk to a D-preferred Azure
+flavor under the sizing rule (RAM meets-or-exceeds source; vCPU floors to the
+nearest size just below), then prints per-VM mapping plus rollup totals (PAYG +
+1yr Reserved) for a target region.
 
 ```bash
 python3 scripts/analyze_rvtools.py inventory.xlsx --region francecentral

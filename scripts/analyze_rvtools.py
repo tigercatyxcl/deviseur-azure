@@ -3,9 +3,10 @@
 Batch sizing from a VMware RVTools export.
 
 Reads an RVTools ``.xlsx`` (the ``vInfo`` sheet), and for every VM maps its
-on-prem allocation (vCPU, RAM, provisioned disk) to the cheapest Azure flavor
-that meets-or-exceeds it (lift-and-shift / right-size-not). Pulls live prices
-and prints a per-VM table plus rollup totals for a target region.
+on-prem allocation (vCPU, RAM, provisioned disk) to a D-preferred Azure flavor
+under the sizing rule: **RAM meets-or-exceeds** the source while **vCPU floors**
+to the nearest Azure size at or just below it. Pulls live prices and prints a
+per-VM table plus rollup totals for a target region.
 
 Usage:
     python3 scripts/analyze_rvtools.py inventory.xlsx --region francecentral
@@ -217,7 +218,11 @@ def map_vms(vms, args):
     for vm in vms:
         flavor = pick_flavor(catalog, vm["vcpu"], vm["ram_gib"])
         vm["flavor"] = flavor
-        vm["undersized"] = bool(flavor) and (flavor["vcpu"] < vm["vcpu"] or flavor["ram_gib"] < vm["ram_gib"])
+        # RAM is the hard floor; a shortfall means no flavor was large enough
+        # (fallback to biggest). A vCPU below source is intentional under the
+        # sizing rule (Azure has no odd-core sizes), so it is NOT a warning.
+        vm["undersized"] = bool(flavor) and flavor["ram_gib"] < vm["ram_gib"]
+        vm["vcpu_trimmed"] = bool(flavor) and flavor["vcpu"] < vm["vcpu"]
 
         sku = flavor["sku"] if flavor else None
         if sku and sku not in vm_price_cache:
@@ -249,7 +254,8 @@ def render(vms, skipped, args, sym, os_detected):
     print(f"# Azure sizing from RVTools — {os.path.basename(args.file)}\n")
     os_desc = "per-VM (from sheet)" if os_detected else f"**{args.os}** (default — no OS column)"
     print(f"Target region **{args.region}** · {args.currency} · OS {os_desc} · "
-          f"strategy **lift-and-shift** (meet-or-exceed source spec)\n")
+          f"strategy **right-size** (RAM meets-or-exceeds source; vCPU may floor "
+          f"to the nearest Azure size just below; D-family preferred)\n")
 
     note_bits = [f"{len(vms)} VMs sized"]
     if skipped["poweredoff"]:
@@ -338,8 +344,12 @@ def render(vms, skipped, args, sym, os_detected):
               f"| {sku}{flag} | {az_spec} | {tier} | {money(payg, sym)} | {money(resv, sym)} |")
 
     if any(vm["undersized"] for vm in vms):
-        print("\n> ⚠️ = no catalog flavor large enough; largest available was used. "
+        print("\n> ⚠️ = no catalog flavor met the RAM floor; largest available was used. "
               "Extend `references/vm-catalog.json` (e.g. GPU/large sizes).")
+    if any(vm.get("vcpu_trimmed") for vm in vms):
+        print("\n> Some VMs map to fewer vCPUs than the source (Azure has no odd-core "
+              "sizes, so e.g. 3 vCPU → 2). RAM is always met-or-exceeded; D-family "
+              "(general-purpose \"Standard\") is preferred.")
 
     if not os_detected:
         print(f"\n> No OS column found in the sheet — all VMs priced as **{args.os}** "
@@ -349,8 +359,9 @@ def render(vms, skipped, args, sym, os_detected):
               "rate (licence included); the 1yr column keeps the Windows licence at PAYG "
               "on top of the base reservation (assume Azure Hybrid Benefit to drop it).")
 
-    print("\n> Lift-and-shift: each VM mapped to the cheapest flavor meeting-or-exceeding "
-          "its **allocated** vCPU/RAM. RVTools is a point-in-time allocation snapshot "
+    print("\n> Right-size: each VM mapped to a D-preferred flavor whose **RAM meets-or-"
+          "exceeds** its **allocated** RAM, with **vCPU floored** to the nearest Azure "
+          "size at or just below the source. RVTools is a point-in-time allocation snapshot "
           "(no performance data, no Azure region) — for right-sizing use Azure Migrate. "
           "Provisioned storage is modelled as one managed disk billed at the next tier up.")
     print(f"\n*Generated {date.today().isoformat()} from Azure Retail Prices API. "

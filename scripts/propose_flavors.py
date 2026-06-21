@@ -17,27 +17,36 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from azure_lib import (  # noqa: E402
     load_catalog, query_vm_prices, organize_vm_prices,
-    currency_symbol, HOURS_PER_MONTH,
+    currency_symbol, target_vcpu, FAMILY_PREFERENCE, HOURS_PER_MONTH,
 )
 
 
 def rank_candidates(catalog, vcpu, ram, max_results):
-    """Pick flavors near the spec.
+    """Propose flavors under the sizing rule.
 
-    Priority: exact vCPU match, then smallest RAM gap. If too few exact-vCPU
-    matches exist, widen to +/- 1 vCPU.
+    **RAM must meet-or-exceed** the source (hard floor); **vCPU may sit just
+    below** it — Azure has no odd-core sizes, so a 3 vCPU source floors to a
+    2 vCPU target (see ``target_vcpu``). Candidates are ranked D-family first so
+    the recommended "Standard" flavor heads the table, while still spreading
+    across families for the user to compare.
     """
-    exact = [s for s in catalog if s["vcpu"] == vcpu]
-    pool = exact if len(exact) >= 3 else [s for s in catalog if abs(s["vcpu"] - vcpu) <= 1]
-    pool.sort(key=lambda s: (abs(s["ram_gib"] - ram), abs(s["vcpu"] - vcpu), s["sku"]))
-    # De-duplicate by (family, vcpu, ram) keeping newest naming first
+    target = target_vcpu(catalog, vcpu)
+    fits = [s for s in catalog if s["ram_gib"] >= ram] or list(catalog)
+
+    def key(s):
+        over = max(0, s["vcpu"] - vcpu)       # cores above the source (discouraged)
+        under = max(0, target - s["vcpu"])    # cores below the floored target (discouraged)
+        return (over, under, FAMILY_PREFERENCE.get(s["family"], 9), s["ram_gib"], s["sku"])
+
+    fits.sort(key=key)
+    # De-duplicate by (family, vcpu, ram) keeping the best-ranked of each.
     seen = set()
     out = []
-    for s in pool:
-        key = (s["family"], s["vcpu"], s["ram_gib"])
-        if key in seen:
+    for s in fits:
+        k = (s["family"], s["vcpu"], s["ram_gib"])
+        if k in seen:
             continue
-        seen.add(key)
+        seen.add(k)
         out.append(s)
         if len(out) >= max_results:
             break
@@ -89,8 +98,10 @@ def main():
               f"| {c['vcpu']} | {c['ram_gib']} GiB "
               f"| {fmt(pr['linux'], sym)} | {fmt_month(pr['linux'], sym)} | {res_mo_val} |")
 
-    print("\n> Exact spec match is listed first (closest RAM). "
-          "Burstable (B) is cheapest for low steady load; Memory (E) gives more RAM/vCPU.")
+    print("\n> Sizing rule: **RAM meets-or-exceeds** your spec, while **vCPU may sit "
+          "just below** it (Azure has no odd-core sizes — 3 vCPU → 2). The recommended "
+          "D-family (\"Standard\" general-purpose) flavor is listed first; "
+          "Burstable (B) is cheapest for low steady load, Memory (E) gives more RAM/vCPU.")
     print(f"\n**Next:** pick a flavor, then run the quote:\n"
           f"`python3 scripts/query_quote.py --sku <Flavor> --region {args.region} "
           f"--disk-size <GiB> --disk-type premium-ssd`")

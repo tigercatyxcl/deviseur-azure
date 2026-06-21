@@ -102,7 +102,8 @@ python3 scripts/propose_flavors.py --vcpu 4 --ram 8 --region francecentral
 ```
 
 Outputs candidates across families (Burstable / General / Memory / Compute),
-exact-spec match first, with Linux €/hr, €/month, and 1yr reserved €/month.
+the recommended D-series (RAM meets-or-exceeds, vCPU floored to the nearest size
+just below) first, with Linux €/hr, €/month, and 1yr reserved €/month.
 **Pick one flavor.**
 
 ### Step 2 — Full quote
@@ -131,8 +132,9 @@ python3 scripts/query_quote.py --sku D4as_v5 --disk-size 25 --output /tmp/quote.
 
 Already have a VMware [RVTools](https://www.robware.net/rvtools/) export? Skip the
 interactive flow and size every VM at once. The analyzer reads the `vInfo` sheet
-and maps each VM's allocated vCPU/RAM/disk to the cheapest Azure flavor that
-**meets-or-exceeds** it (lift-and-shift), then prints a per-VM mapping plus
+and maps each VM's allocated vCPU/RAM/disk to a D-preferred Azure flavor under
+the sizing rule — **RAM meets-or-exceeds** the source while **vCPU floors** to
+the nearest Azure size just below it — then prints a per-VM mapping plus
 rollup totals (PAYG + 1yr Reserved). Needs `openpyxl` (already in
 `requirements.txt`).
 
@@ -153,7 +155,7 @@ base rate. `--os` is only the fallback when the sheet has no OS column.
 
 > **Heads-up:** RVTools contains **no Azure region** — region is a target you
 > choose (default `francecentral`). It's also a point-in-time *allocation*
-> snapshot, not performance data, so this is a lift-and-shift estimate; for
+> snapshot, not performance data, so this is an allocation-based estimate; for
 > performance-based right-sizing use Azure Migrate. Powered-off VMs and templates
 > are excluded by default; one `--disk-type` applies to all VMs. A sample export
 > ships at [`examples/rvtools-sample.xlsx`](examples/rvtools-sample.xlsx).

@@ -47,9 +47,10 @@ table). To export the quote as a Markdown file, add `--output` (bare flag →
 
 When the user provides a VMware **RVTools** export (`.xlsx`) instead of one spec,
 run the batch analyzer (not the two-step flow). It reads the `vInfo` sheet and
-maps each VM's allocated vCPU/RAM/disk to the cheapest Azure flavor that
-**meets-or-exceeds** it (lift-and-shift), then prints per-VM mapping plus rollup
-totals for a target region. Needs `openpyxl`.
+maps each VM's allocated vCPU/RAM/disk to a D-preferred Azure flavor under the
+sizing rule (RAM meets-or-exceeds source; vCPU floors to the nearest size just
+below), then prints per-VM mapping plus rollup totals for a target region. Needs
+`openpyxl`.
 
 ```bash
 python3 scripts/analyze_rvtools.py inventory.xlsx --region francecentral

@@ -1,6 +1,6 @@
 ---
 name: deviseur-azure
-description: Azure pre-sales quoting from a hardware spec. Use when a user describes a VM by specs (e.g. "4U8G, 25G SSD", "4 vCPU 8GB", "8 cores 64GB memory") and wants Azure pricing or a quote. Two-step flow - first PROPOSE several matching Azure flavors (SKUs) across families with live prices in a region, let the user pick one, then output a full region QUOTE including managed disk and monthly/annual totals. Also supports BATCH sizing from a VMware RVTools .xlsx export (vInfo sheet) - lift-and-shift map every VM to the cheapest meet-or-exceed Azure flavor with rollup totals. Defaults to francecentral region and EUR currency.
+description: Azure pre-sales quoting from a hardware spec. Use when a user describes a VM by specs (e.g. "4U8G, 25G SSD", "4 vCPU 8GB", "8 cores 64GB memory") and wants Azure pricing or a quote. Two-step flow - first PROPOSE several matching Azure flavors (SKUs) across families with live prices in a region, let the user pick one, then output a full region QUOTE including managed disk and monthly/annual totals. Also supports BATCH sizing from a VMware RVTools .xlsx export (vInfo sheet) - map every VM to a D-preferred Azure flavor (RAM meets-or-exceeds source, vCPU floors to nearest size just below) with rollup totals. Defaults to francecentral region and EUR currency.
 version: 1.0.0
 platforms: [linux, macos, windows]
 metadata:
@@ -19,6 +19,25 @@ spec→flavor mapping uses the local catalog in `references/vm-catalog.json`.
 
 Scripts are under `scripts/`. Reference data is under `references/`.
 
+## Sizing rule (when the spec doesn't match an Azure standard size)
+
+Customer specs often don't line up with Azure's fixed vCPU grid (1, 2, 4, 8,
+16, 32 …). When the spec falls between sizes, apply this rule:
+
+- **RAM must meet-or-exceed** the customer's RAM — never give them less memory.
+- **vCPU may sit just below** the customer's vCPU — round the core count *down*
+  to the nearest Azure size rather than up.
+- **Prefer the D family** (general-purpose — Azure's "Standard" tier) when a
+  D-series flavor satisfies the RAM floor; fall back to E (memory) when only E
+  can meet the RAM at that core count, then F/B.
+
+Example: a `3U4G` request (3 vCPU, 4 GiB) → recommend **`D2s_v5`** style sizing
+(2 vCPU, RAM ≥ 4 GiB, D-series). The 3rd core is dropped (no 3-vCPU Azure size);
+RAM is honored; D-series wins because it's the Standard general-purpose family.
+
+This rule is implemented in `pick_flavor` / `target_vcpu` (`scripts/azure_lib.py`)
+and drives both the interactive proposal and the RVTools batch mapping.
+
 ## Workflow (TWO steps — always interactive)
 
 ### Step 1 — Propose flavors
@@ -34,8 +53,9 @@ Display the full proposal table, then **ask the user to pick a flavor (#)**.
 Do NOT skip ahead to the quote — the user chooses first.
 
 The table shows candidates across families (Burstable / General / Memory /
-Compute), the exact-spec match first, with Linux €/hr, €/month, and 1yr
-reserved €/month.
+Compute), the recommended D-series first (per the **Sizing rule** above — RAM
+meets-or-exceeds, vCPU floored to the nearest size just below), with Linux €/hr,
+€/month, and 1yr reserved €/month.
 
 ### Step 2 — Quote the chosen flavor
 Once the user picks a flavor, capture the disk requirement from the original
@@ -51,9 +71,10 @@ Display the full output: VM compute table, managed disk, and combined total
 
 When the user provides a VMware **RVTools** export (`.xlsx`) and wants the whole
 estate sized, skip the interactive flavor pick and run the batch analyzer. It
-reads the `vInfo` sheet and, per VM, maps the allocated vCPU/RAM/disk to the
-cheapest Azure flavor that **meets-or-exceeds** it (lift-and-shift), then prints
-per-VM mapping plus rollup totals (PAYG + 1yr Reserved) for a target region.
+reads the `vInfo` sheet and, per VM, maps the allocated vCPU/RAM/disk to a
+D-preferred Azure flavor following the **Sizing rule** above (RAM meets-or-
+exceeds; vCPU floors to the nearest size just below), then prints per-VM mapping
+plus rollup totals (PAYG + 1yr Reserved) for a target region.
 
 ```bash
 python3 scripts/analyze_rvtools.py inventory.xlsx --region francecentral

@@ -39,28 +39,54 @@ def load_disk_tiers() -> Dict[str, Any]:
 
 
 # Preference order when several flavors fit equally well. General-purpose (D)
-# is the safe default for unknown lift-and-shift workloads, then Compute (F),
-# Memory (E), Burstable (B) last (B throttles under steady load).
+# is the "Standard" default for unknown lift-and-shift workloads, then Compute
+# (F), Memory (E), Burstable (B) last (B throttles under steady load).
 FAMILY_PREFERENCE = {"D": 0, "F": 1, "E": 2, "B": 3}
 
 
-def pick_flavor(catalog: List[Dict[str, Any]], vcpu: int, ram_gib: float) -> Optional[Dict[str, Any]]:
-    """Pick the cheapest catalog flavor that meets-or-exceeds a source spec.
+def target_vcpu(catalog: List[Dict[str, Any]], vcpu: int) -> int:
+    """The Azure vCPU count to aim for: the largest standard size <= the source.
 
-    Lift-and-shift semantics: never under-provision. Among flavors with
-    ``vcpu >= source`` and ``ram_gib >= source``, choose the smallest by vCPU
-    then RAM (vCPU dominates price), tie-broken by family preference. If nothing
-    is large enough, fall back to the single largest flavor in the catalog.
+    Azure VMs come in a fixed vCPU grid (1, 2, 4, 8, 16, 32 ...). When a source
+    spec lands between two sizes (e.g. 3 vCPU), the sizing rule allows the target
+    to sit *just below* the source rather than rounding up — so 3 vCPU floors to
+    2. If the source is smaller than every catalog size, use the smallest size.
     """
-    fits = [s for s in catalog if s["vcpu"] >= vcpu and s["ram_gib"] >= ram_gib]
-    if fits:
-        fits.sort(key=lambda s: (s["vcpu"], s["ram_gib"],
-                                 FAMILY_PREFERENCE.get(s["family"], 9), s["sku"]))
-        return fits[0]
+    grid = sorted({s["vcpu"] for s in catalog})
+    below = [g for g in grid if g <= vcpu]
+    return max(below) if below else min(grid)
+
+
+def pick_flavor(catalog: List[Dict[str, Any]], vcpu: int, ram_gib: float) -> Optional[Dict[str, Any]]:
+    """Pick the best catalog flavor for a source spec under the sizing rule.
+
+    The rule (azure目标vm sizing): **RAM must meet-or-exceed** the source, but
+    **vCPU may sit just below** it — Azure has no odd-core sizes, so a 3 vCPU /
+    4 GiB source maps to a 2 vCPU target with RAM >= 4 (e.g. ``D2s_v5``), and we
+    **prefer the D family** (general-purpose "Standard") on ties.
+
+    Selection: among flavors with ``ram_gib >= source`` (the hard floor), rank by
+      1. fewest vCPUs *above* the source (don't over-provision cores),
+      2. fewest vCPUs *below* the floored target (don't needlessly under-provision),
+      3. family preference (D first),
+      4. least RAM over-provision, then SKU name.
+    If nothing satisfies the RAM floor, fall back to the single largest flavor.
+    """
     if not catalog:
         return None
-    # Nothing fits — return the biggest available so the caller can flag it.
-    return max(catalog, key=lambda s: (s["vcpu"], s["ram_gib"]))
+    fits = [s for s in catalog if s["ram_gib"] >= ram_gib]
+    if not fits:
+        # RAM floor unmet — return the biggest available so the caller can flag it.
+        return max(catalog, key=lambda s: (s["ram_gib"], s["vcpu"]))
+    target = target_vcpu(catalog, vcpu)
+
+    def key(s):
+        over = max(0, s["vcpu"] - vcpu)       # cores above the source (discouraged)
+        under = max(0, target - s["vcpu"])    # cores below the floored target (discouraged)
+        return (over, under, FAMILY_PREFERENCE.get(s["family"], 9), s["ram_gib"], s["sku"])
+
+    fits.sort(key=key)
+    return fits[0]
 
 
 def normalize_sku(sku: str) -> str:
