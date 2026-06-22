@@ -144,7 +144,8 @@ compute is billed). Always quote both so the customer sees the licence upside.
 
 ### export_fleet_xlsx.py
 Export a **multi-group fleet quote to a multi-sheet Excel workbook** (Selection,
-Per-Group, Fleet Total, TCO). Use when the user wants several different specs /
+Per-Group, Group Detail, Fleet Total, TCO — where Group Detail breaks each group
+into VM + disk for PAYG / 1yr / 3yr). Use when the user wants several different specs /
 OSes / quantities priced together, or asks for **Excel/`.xlsx` output**. Pulls
 live prices, carries the Windows AHB / no-AHB split, and builds a 1/2/3-year TCO.
 Define the fleet with one repeatable `--group "SPEC,OS,QTY[,SKU]"` per distinct

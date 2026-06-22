@@ -3,10 +3,11 @@
 Export a multi-VM (fleet) Azure quote to a multi-sheet Excel workbook.
 
 Builds, from live Azure Retail Prices, an .xlsx with:
-  * Selection   — the per-group source spec → Azure SKU + disk mapping
-  * Per-Group   — monthly compute per group across every commitment option + disk
-  * Fleet Total — the whole-fleet compute / disk / total rollup (monthly + annual)
-  * TCO         — cumulative cost over 1 / 2 / 3 year ownership horizons
+  * Selection    — the per-group source spec → Azure SKU + disk mapping
+  * Per-Group    — monthly compute per group across every commitment option + disk
+  * Group Detail — per group, VM + disk broken out for PAYG / 1yr / 3yr Reserved
+  * Fleet Total  — the whole-fleet compute / disk / total rollup (monthly + annual)
+  * TCO          — cumulative cost over 1 / 2 / 3 year ownership horizons
 
 Windows groups carry two reserved figures: **no AHB** (the Windows Server
 licence stays at PAYG on top of the reserved compute) and **with AHB** (Azure
@@ -327,7 +328,43 @@ def build(path, groups, region, currency):
     note.font = Font(italic=True, color="808080")
     autofit(ws, [8, 10, 6, 20] + [24] * len(COMMITMENTS) + [12])
 
-    # ---- Sheet 3: Fleet Total (compute / disk / total) ----
+    # ---- Sheet 3: Per-Group Detail (VM + disk per PAYG / 1yr / 3yr) ----
+    ws = wb.create_sheet("Group Detail")
+    ws["A1"] = "Per-group detail — VM + disk by PAYG / 1yr / 3yr Reserved (€/month)"
+    ws["A1"].font = TITLE_FONT
+    hdr = ["Group", "OS", "Qty", "SKU", "Disk tier", "Commitment",
+           "VM /mo", "Disk /mo", "Total /mo", "Total /yr"]
+    ws.append([])
+    ws.append(hdr)
+    style_header(ws, ws.max_row, len(hdr))
+    for g in groups:
+        # Linux: no-AHB and AHB reserved are identical, so collapse to one row each.
+        if g["os"] == "windows":
+            detail = [("PAYG", "payg"),
+                      ("1yr Reserved (no AHB)", "ri1y_noahb"), ("1yr Reserved (AHB)", "ri1y_ahb"),
+                      ("3yr Reserved (no AHB)", "ri3y_noahb"), ("3yr Reserved (AHB)", "ri3y_ahb")]
+        else:
+            detail = [("PAYG", "payg"), ("1yr Reserved", "ri1y_ahb"), ("3yr Reserved", "ri3y_ahb")]
+        disk_tier = g["disk_desc"].split("→", 1)[-1].strip() if g["disk_size"] else "—"
+        for j, (clabel, k) in enumerate(detail):
+            vm = g["compute"][k]
+            tot = g["total"][k]
+            # Repeat the group identity only on its first row for readability.
+            head = [g["label"], g["os"].capitalize(), g["qty"], g["sku"], disk_tier] if j == 0 \
+                else ["", "", "", "", ""]
+            write_row(ws, ws.max_row + 1,
+                      head + [clabel, vm, g["disk_total"], tot,
+                              None if tot is None else tot * 12],
+                      money_cols=(7, 8, 9, 10), bold=(k == "payg"))
+    ws.append([])
+    note = ws.cell(row=ws.max_row + 1, column=1,
+                   value="Total = VM + disk. Disk is the flat per-group disk cost (same in every "
+                         "commitment row — no reservation discount). Linux 1yr/3yr collapse the "
+                         "AHB columns (no Windows licence); Windows shows both.")
+    note.font = Font(italic=True, color="808080")
+    autofit(ws, [8, 9, 6, 18, 30, 22, 12, 12, 12, 14])
+
+    # ---- Sheet 4: Fleet Total (compute / disk / total) ----
     ws = wb.create_sheet("Fleet Total")
     ws["A1"] = f"Whole-fleet rollup — {n_vms} VMs (€)"
     ws["A1"].font = TITLE_FONT
@@ -353,7 +390,7 @@ def build(path, groups, region, currency):
     note.font = Font(italic=True, color="808080")
     autofit(ws, [30, 14, 12, 14, 16, 10])
 
-    # ---- Sheet 4: TCO over 1/2/3 year horizons (compute + disk) ----
+    # ---- Sheet 5: TCO over 1/2/3 year horizons (compute + disk) ----
     ws = wb.create_sheet("TCO")
     ws["A1"] = "Total Cost of Ownership — cumulative spend by horizon (€, incl. disk)"
     ws["A1"].font = TITLE_FONT

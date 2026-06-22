@@ -180,9 +180,10 @@ the sizing rule unless pinned):
 python3 scripts/export_fleet_xlsx.py \
     --group 4U8G,windows,10 --group 3U6G,linux,10 --group 5U11G,linux,10
 ```
-It writes a multi-sheet workbook — Selection, Per-Group, Fleet Total, and a
-1/2/3-year TCO — with the Windows AHB / no-AHB split carried through. `.xlsx`
-outputs land under `quotes/` (git-ignored).
+It writes a multi-sheet workbook — Selection, Per-Group, Group Detail (each
+group's VM + disk for PAYG / 1yr / 3yr), Fleet Total, and a 1/2/3-year TCO —
+with the Windows AHB / no-AHB split carried through. `.xlsx` outputs land under
+`quotes/` (git-ignored).
 
 ## Reference data
 
