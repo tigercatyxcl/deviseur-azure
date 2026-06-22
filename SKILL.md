@@ -129,11 +129,23 @@ Export a **multi-group fleet quote to a multi-sheet Excel workbook** (Selection,
 Per-Group, Fleet Total, TCO). Use when the user wants several different specs /
 OSes / quantities priced together, or asks for **Excel/`.xlsx` output**. Pulls
 live prices, carries the Windows AHB / no-AHB split, and builds a 1/2/3-year TCO.
-Edit the `GROUPS` list at the top of the file to define the fleet.
+Define the fleet with one repeatable `--group "SPEC,OS,QTY[,SKU]"` per distinct
+group; the SKU is auto-picked from the sizing rule unless pinned as a 4th field.
 ```bash
-python3 scripts/export_fleet_xlsx.py            # writes under quotes/
-python3 scripts/export_fleet_xlsx.py --output /tmp/quote.xlsx
+python3 scripts/export_fleet_xlsx.py \
+    --group 4U8G,windows,10 --group 3U6G,linux,10 --group 5U11G,linux,10
+# pin a SKU, set region / output path:
+python3 scripts/export_fleet_xlsx.py --group 8U64G,linux,5,E8s_v5 \
+    --region westeurope --output /tmp/quote.xlsx
 ```
+
+| Option | Default | Notes |
+|--------|---------|-------|
+| `--group` / `-g` | required | `SPEC,OS,QTY[,SKU]`; repeat per group. SKU optional (auto-picked) |
+| `--region` / `-r` | francecentral | Azure region |
+| `--currency` / `-c` | EUR | Currency code |
+| `--output` / `-o` | auto | `.xlsx` path; default auto-named under `quotes/` |
+
 The 2-year TCO column is a **time horizon** (a 1yr reservation renewed) — Azure
 VM reservations exist only in 1yr and 3yr terms.
 

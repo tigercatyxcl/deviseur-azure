@@ -164,10 +164,16 @@ use Azure Migrate. Powered-off VMs and templates are excluded by default. Needs
 ## Multi-group fleets & Excel export
 
 For several specs/OSes/quantities priced together, or when the user asks for
-**Excel/`.xlsx`**, use `scripts/export_fleet_xlsx.py` (define the fleet in the
-`GROUPS` list at the top). It writes a multi-sheet workbook — Selection,
-Per-Group, Fleet Total, and a 1/2/3-year TCO — with the Windows AHB / no-AHB
-split carried through. `.xlsx` outputs land under `quotes/` (git-ignored).
+**Excel/`.xlsx`**, use `scripts/export_fleet_xlsx.py`. Define the fleet with one
+repeatable `--group "SPEC,OS,QTY[,SKU]"` per distinct group (SKU auto-picked from
+the sizing rule unless pinned):
+```bash
+python3 scripts/export_fleet_xlsx.py \
+    --group 4U8G,windows,10 --group 3U6G,linux,10 --group 5U11G,linux,10
+```
+It writes a multi-sheet workbook — Selection, Per-Group, Fleet Total, and a
+1/2/3-year TCO — with the Windows AHB / no-AHB split carried through. `.xlsx`
+outputs land under `quotes/` (git-ignored).
 
 ## Reference data
 
