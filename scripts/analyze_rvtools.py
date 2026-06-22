@@ -334,7 +334,10 @@ def render(vms, skipped, args, sym, os_detected):
         az_spec = f"{f['vcpu']} / {f['ram_gib']}G" if f else "?"
         flag = " ⚠️" if vm["undersized"] else ""
         src_disk = f"{vm['disk_gib']:g}G" if vm["disk_gib"] else "—"
-        tier = vm["disk_tier"]["sku_name"] if vm["disk_tier"] else "—"
+        if vm["disk_tier"]:
+            tier = vm["disk_tier"]["sku_name"] + (" ⤓" if vm["disk_tier"].get("undersized") else "")
+        else:
+            tier = "—"
         os_cell = vm["os"][:3].capitalize() + ("*" if vm["os_source"] == "default" else "")
         vm_m = vm_monthly(vm, vm["payg_hr"])
         res_m = vm_monthly(vm, vm["reserved_hr"])
@@ -351,6 +354,9 @@ def render(vms, skipped, args, sym, os_detected):
         print("\n> Some VMs map to fewer vCPUs than the source (Azure has no odd-core "
               "sizes, so e.g. 3 vCPU → 2). RAM is always met-or-exceeded; D-family "
               "(general-purpose \"Standard\") is preferred.")
+    if any(vm["disk_tier"] and vm["disk_tier"].get("undersized") for vm in vms):
+        print("\n> ⤓ = disk tier sits just below the provisioned size but within the 80% "
+              "tolerance — the cheapest tier in the 80%–120% band was chosen to lower cost.")
 
     if not os_detected:
         print(f"\n> No OS column found in the sheet — all VMs priced as **{args.os}** "
