@@ -78,9 +78,14 @@ def render(args, sym, sku):
         print(f"\n## Managed disk\n")
         print("| Requested | Billed tier | Type | Monthly |")
         print("|-----------|-------------|------|---------|")
-        print(f"| {args.disk_size:g} GiB | {disk_info['sku_name']} ({disk_info['tier_size_gib']} GiB) "
+        fit_flag = " ⤓" if disk_info.get("undersized") else ""
+        print(f"| {args.disk_size:g} GiB | {disk_info['sku_name']} ({disk_info['tier_size_gib']} GiB){fit_flag} "
               f"| {disk_info['label']} | {money(disk_monthly, sym)} |")
-        print(f"\n> Azure bills the next disk tier up from the requested size.")
+        print("\n> Disk tier is the cheapest that fits within 80%–120% of the requested size "
+              "(else the next tier above 120%).")
+        if disk_info.get("undersized"):
+            print(f"> ⤓ The {disk_info['tier_size_gib']:g} GiB tier sits below the requested "
+                  f"{args.disk_size:g} GiB but stays within the 80% tolerance — chosen to lower cost.")
 
     # --- Combined total across commitment options ---
     os_hourly = vm[args.os]

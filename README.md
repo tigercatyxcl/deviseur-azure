@@ -207,8 +207,9 @@ base rate. `--os` is only the fallback when the sheet has no OS column.
 - **Reservation** `retailPrice` is the TOTAL for the whole term; the scripts
   amortize it to an effective hourly/monthly rate.
 - **Linux and Windows+AHB** share the same compute price.
-- **Disk** bills at the next tier up (25 GiB → P4 = 32 GiB), with no reservation
-  discount.
+- **Disk** is mapped to the cheapest tier within 80%–120% of the request (else
+  the next tier above 120% — e.g. 80 GiB → 64 GiB, 100 GiB → 128 GiB), with no
+  reservation discount.
 - Monthly = hourly × 730; annual = hourly × 8760.
 
 ---

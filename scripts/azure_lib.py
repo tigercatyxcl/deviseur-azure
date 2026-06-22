@@ -175,27 +175,51 @@ def _min(d: Dict[str, Optional[float]], key: str, price: float) -> None:
         d[key] = price
 
 
-def disk_tier_for_size(size_gib: float, disk_type: str, tiers_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Round a requested disk size up to the next managed-disk tier.
+# Tolerance band for fitting a requested disk size to a managed-disk tier.
+DISK_TOLERANCE_LOW = 0.80   # may go down to 80% of the request to save cost
+DISK_TOLERANCE_HIGH = 1.20  # ... up to 120% before forcing a round-up
 
-    Returns {sku_name, product_name, tier_size_gib, label}.
+
+def select_disk_tier(size_gib: float, tiers: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Pick the managed-disk tier for a requested size, minimizing cost.
+
+    Azure disk tiers are discrete (4, 8, 16, 32, 64, 128 ... GiB). When no tier
+    matches exactly, choose the **smallest** tier whose size lands within
+    80%–120% of the request (cheapest acceptable fit — this may sit just *below*
+    the requested size). If nothing falls in that band, step up to the smallest
+    tier above 120%. ``tiers`` is assumed sorted ascending by ``size_gib``.
+    """
+    exact = [t for t in tiers if t["size_gib"] == size_gib]
+    if exact:
+        return exact[0]
+    lo, hi = size_gib * DISK_TOLERANCE_LOW, size_gib * DISK_TOLERANCE_HIGH
+    in_band = [t for t in tiers if lo <= t["size_gib"] <= hi]
+    if in_band:
+        return min(in_band, key=lambda t: t["size_gib"])
+    above = [t for t in tiers if t["size_gib"] > hi]
+    if above:
+        return min(above, key=lambda t: t["size_gib"])
+    return tiers[-1]
+
+
+def disk_tier_for_size(size_gib: float, disk_type: str, tiers_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Map a requested disk size to a managed-disk tier (see ``select_disk_tier``).
+
+    Returns {sku_name, product_name, tier_size_gib, label, undersized}.
+    ``undersized`` is True when the chosen tier sits below the requested size
+    (allowed within the 80% tolerance band).
     """
     dtype = tiers_data["disk_types"].get(disk_type)
     if dtype is None:
         raise ValueError(f"Unknown disk type '{disk_type}'. Options: {list(tiers_data['disk_types'])}")
-    chosen = None
-    for tier in tiers_data["tiers"]:
-        if tier["size_gib"] >= size_gib:
-            chosen = tier
-            break
-    if chosen is None:
-        chosen = tiers_data["tiers"][-1]
+    chosen = select_disk_tier(size_gib, tiers_data["tiers"])
     sku_name = f"{dtype['tier_prefix']}{chosen['index']} LRS"
     return {
         "sku_name": sku_name,
         "product_name": dtype["product_name"],
         "tier_size_gib": chosen["size_gib"],
         "label": dtype["label"],
+        "undersized": chosen["size_gib"] < size_gib,
     }
 
 

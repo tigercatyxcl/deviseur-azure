@@ -3,25 +3,27 @@
 Export a multi-VM (fleet) Azure quote to a multi-sheet Excel workbook.
 
 Builds, from live Azure Retail Prices, an .xlsx with:
-  * Selection   — the per-group source spec → Azure SKU mapping
-  * Per-Group   — monthly cost per group across every commitment option
-  * Fleet Total — the whole-fleet monthly + annual rollup
+  * Selection   — the per-group source spec → Azure SKU + disk mapping
+  * Per-Group   — monthly compute per group across every commitment option + disk
+  * Fleet Total — the whole-fleet compute / disk / total rollup (monthly + annual)
   * TCO         — cumulative cost over 1 / 2 / 3 year ownership horizons
 
 Windows groups carry two reserved figures: **no AHB** (the Windows Server
 licence stays at PAYG on top of the reserved compute) and **with AHB** (Azure
 Hybrid Benefit — only the reserved compute is billed). Azure VM reservations
 exist only in 1yr and 3yr terms; the 2-year TCO column is a *time horizon*
-(a 1yr reservation renewed), not a 2-year reservation product.
+(a 1yr reservation renewed), not a 2-year reservation product. Managed disk is
+billed at the next tier up and has no reservation discount.
 
 The fleet is defined on the command line with one repeatable --group per
-distinct spec, each "SPEC,OS,QTY[,SKU]". The SKU is auto-picked via the sizing
-rule (RAM meet-or-exceed, vCPU floor, D-family preferred) unless pinned.
+distinct spec, each "SPEC,OS,QTY[,DISK][,SKU]". DISK is "<size><type>" e.g.
+100ssd / 80hdd / 200nvme; SKU is auto-picked via the sizing rule unless pinned.
 
 Usage:
     python3 scripts/export_fleet_xlsx.py \
-        --group 4U8G,windows,10 --group 3U6G,linux,10 --group 5U11G,linux,10
-    # pin a SKU and choose region / output path:
+        --group 4U8G,windows,10,100ssd \
+        --group 3U6G,linux,10,80hdd \
+        --group 5U11G,linux,10,200nvme
     python3 scripts/export_fleet_xlsx.py --group 8U64G,linux,5,E8s_v5 \
         --region westeurope --output /tmp/quote.xlsx
 """
@@ -37,16 +39,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from azure_lib import (  # noqa: E402
     query_vm_prices, organize_vm_prices, currency_symbol, HOURS_PER_MONTH,
     load_catalog, pick_flavor, normalize_sku,
+    load_disk_tiers, disk_tier_for_size, query_disk_price,
 )
 
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-
-# ── Fleet definition ────────────────────────────────────────────────────────
-# Groups are supplied on the command line via repeatable --group arguments:
-#   --group "4U8G,windows,10"        (source spec, OS, qty; SKU auto-picked)
-#   --group "5U11G,linux,10,D8s_v5"  (4th field pins an explicit SKU)
-# See parse_group() / build_groups() below.
 
 # Commitment keys carried through every table (None = not available).
 COMMITMENTS = [
@@ -61,25 +58,52 @@ COMMIT_LABEL = {
     "ri3y_ahb": "3yr Reserved (Win AHB)",
 }
 
-
+# Disk keyword → catalog disk type. Azure managed disks come in Premium SSD,
+# Standard SSD and Standard HDD here; "nvme" maps to the highest-perf tier
+# available (Premium SSD) — true NVMe-class IOPS needs Premium SSD v2 / Ultra,
+# which are not in the catalog (flagged on the sheet).
+DISK_KEYWORDS = {
+    "ssd": "premium-ssd", "premium": "premium-ssd", "premiumssd": "premium-ssd",
+    "pssd": "premium-ssd", "nvme": "premium-ssd", "nvmessd": "premium-ssd",
+    "sssd": "standard-ssd", "standardssd": "standard-ssd", "stdssd": "standard-ssd",
+    "hdd": "standard-hdd", "standardhdd": "standard-hdd", "stdhdd": "standard-hdd",
+}
+DISK_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*g?b?\s*([a-z]+)?\s*$", re.I)
 SPEC_RE = re.compile(r"^\s*(\d+)\s*[uUcC]\s*(\d+(?:\.\d+)?)\s*[gG]?\s*$")
 
+
+# ── Group / spec / disk parsing ─────────────────────────────────────────────
 
 def parse_spec(spec):
     """Parse a shorthand spec like '4U8G' / '3c6g' / '5U11' into (vcpu, ram_gib)."""
     m = SPEC_RE.match(spec)
     if not m:
-        raise ValueError(
-            f"Bad spec '{spec}'. Use <vcpu>U<ram>G, e.g. 4U8G or 5U11G.")
+        raise ValueError(f"Bad spec '{spec}'. Use <vcpu>U<ram>G, e.g. 4U8G or 5U11G.")
     return int(m.group(1)), float(m.group(2))
 
 
+def parse_disk(token):
+    """Parse a disk token like '100ssd' / '80hdd' / '200nvme' into
+    (size_gib, disk_type, was_nvme)."""
+    m = DISK_RE.match(token)
+    if not m:
+        raise ValueError(f"Bad disk '{token}'. Use <size><type>, e.g. 100ssd / 80hdd / 200nvme.")
+    size = float(m.group(1))
+    kw = (m.group(2) or "ssd").lower()
+    if kw not in DISK_KEYWORDS:
+        raise ValueError(
+            f"Unknown disk type '{kw}' in '{token}'. Try ssd / nvme / sssd / hdd.")
+    return size, DISK_KEYWORDS[kw], kw in ("nvme", "nvmessd")
+
+
 def parse_group(raw):
-    """Parse one --group value 'SPEC,OS,QTY[,SKU]' into a partial group dict."""
+    """Parse one --group value 'SPEC,OS,QTY[,DISK][,SKU]'. Extra fields after QTY
+    are classified by their first character: a leading digit is a DISK token,
+    otherwise an explicit SKU."""
     parts = [p.strip() for p in raw.split(",")]
     if len(parts) < 3:
         raise ValueError(
-            f"Bad --group '{raw}'. Expected 'SPEC,OS,QTY[,SKU]', e.g. '4U8G,windows,10'.")
+            f"Bad --group '{raw}'. Expected 'SPEC,OS,QTY[,DISK][,SKU]', e.g. '4U8G,windows,10,100ssd'.")
     spec, os_raw, qty_raw = parts[0], parts[1].lower(), parts[2]
     if os_raw not in ("linux", "windows"):
         raise ValueError(f"OS must be 'linux' or 'windows', got '{parts[1]}' in '{raw}'.")
@@ -90,9 +114,17 @@ def parse_group(raw):
     if qty < 1:
         raise ValueError(f"QTY must be >= 1 in '{raw}'.")
     vcpu, ram = parse_spec(spec)
-    sku = parts[3] if len(parts) >= 4 and parts[3] else None
+
+    disk_size = disk_type = sku = None
+    nvme = False
+    for extra in (p for p in parts[3:] if p):
+        if extra[0].isdigit():
+            disk_size, disk_type, nvme = parse_disk(extra)
+        else:
+            sku = extra
     return {"src": spec.upper(), "os": os_raw, "qty": qty,
-            "vcpu_src": vcpu, "ram_src": ram, "sku_override": sku}
+            "vcpu_src": vcpu, "ram_src": ram, "sku_override": sku,
+            "disk_size": disk_size, "disk_type": disk_type, "disk_nvme": nvme}
 
 
 def build_groups(raw_groups):
@@ -119,12 +151,17 @@ def build_groups(raw_groups):
             "label": labels[i] if i < len(labels) else f"G{i + 1}",
             "src": g["src"], "os": g["os"], "qty": g["qty"],
             "sku": sku, "vcpu": vcpu, "ram": ram,
+            "disk_size": g["disk_size"], "disk_type": g["disk_type"],
+            "disk_nvme": g["disk_nvme"],
         })
     return groups
 
 
-def group_monthly(g, region, currency):
-    """Return {commitment: monthly_total_for_group} (None where unavailable)."""
+# ── Pricing ─────────────────────────────────────────────────────────────────
+
+def group_compute(g, region, currency):
+    """Return {commitment: monthly compute for the whole group} (None where
+    unavailable). Quantity is already applied."""
     pr = organize_vm_prices(query_vm_prices(g["sku"], region, currency))
     qty, mo = g["qty"], HOURS_PER_MONTH
 
@@ -155,6 +192,26 @@ def group_monthly(g, region, currency):
         "ri3y_noahb": m(pr["reserved_3yr"]),
         "ri3y_ahb": m(pr["reserved_3yr"]),
     }
+
+
+def group_disk(g, region, currency, tiers, cache):
+    """Return (disk_total_monthly, per_vm_monthly, description). No disk → 0/0/'—'."""
+    if not g["disk_size"]:
+        return 0.0, 0.0, "—"
+    info = disk_tier_for_size(g["disk_size"], g["disk_type"], tiers)
+    key = (info["sku_name"], region, currency)
+    if key not in cache:
+        cache[key] = query_disk_price(info["sku_name"], info["product_name"], region, currency)
+    per_vm = cache[key] or 0.0
+    notes = []
+    if g["disk_nvme"]:
+        notes.append("NVMe→Premium")
+    if info.get("undersized"):
+        notes.append("↓ within 80% tol.")
+    suffix = f" ({', '.join(notes)})" if notes else ""
+    desc = (f"{g['disk_size']:g} GiB → {info['sku_name']} "
+            f"({info['tier_size_gib']} GiB, {info['label']}){suffix}")
+    return per_vm * g["qty"], per_vm, desc
 
 
 def add(a, b):
@@ -199,83 +256,106 @@ def write_row(ws, row, values, money_cols=(), bold=False):
             cell.alignment = Alignment(horizontal="right")
 
 
-def build(path, groups, region, currency):
-    sym = currency_symbol(currency)  # noqa: F841 (kept for future symbol use)
-    for g in groups:
-        g["monthly"] = group_monthly(g, region, currency)
+# ── Workbook ────────────────────────────────────────────────────────────────
 
-    # Fleet monthly per commitment
-    fleet = {k: None for k in COMMITMENTS}
+def build(path, groups, region, currency):
+    tiers = load_disk_tiers()
+    disk_cache = {}
+    for g in groups:
+        g["compute"] = group_compute(g, region, currency)
+        g["disk_total"], g["disk_per_vm"], g["disk_desc"] = group_disk(
+            g, region, currency, tiers, disk_cache)
+        # Per-group total per commitment = compute + disk, where compute exists.
+        g["total"] = {k: (None if g["compute"][k] is None else g["compute"][k] + g["disk_total"])
+                      for k in COMMITMENTS}
+
+    # Fleet rollups per commitment (a group joins a row only if it has that rate).
+    f_compute = {k: None for k in COMMITMENTS}
+    f_disk = {k: None for k in COMMITMENTS}
+    f_total = {k: None for k in COMMITMENTS}
     for k in COMMITMENTS:
         for g in groups:
-            fleet[k] = add(fleet[k], g["monthly"][k])
+            if g["compute"][k] is None:
+                continue
+            f_compute[k] = add(f_compute[k], g["compute"][k])
+            f_disk[k] = add(f_disk[k], g["disk_total"])
+            f_total[k] = add(f_total[k], g["total"][k])
 
+    n_vms = sum(g["qty"] for g in groups)
     wb = openpyxl.Workbook()
 
     # ---- Sheet 1: Selection ----
     ws = wb.active
     ws.title = "Selection"
-    ws["A1"] = f"Azure Quote — {len(groups)} groups / {sum(g['qty'] for g in groups)} VMs @ {region} ({currency})"
+    ws["A1"] = f"Azure Quote — {len(groups)} groups / {n_vms} VMs @ {region} ({currency})"
     ws["A1"].font = TITLE_FONT
     ws["A2"] = (f"Generated {date.today().isoformat()} · live Azure Retail Prices · "
                 f"sizing rule: RAM meets-or-exceeds, vCPU floors to nearest size, D-family preferred")
     ws["A2"].font = Font(italic=True, color="808080")
-    hdr = ["Group", "Source spec", "OS", "Qty", "Azure SKU", "vCPU", "RAM (GiB)"]
+    hdr = ["Group", "Source spec", "OS", "Qty", "Azure SKU", "vCPU", "RAM (GiB)", "Disk (per VM)"]
     ws.append([])
     ws.append(hdr)
     style_header(ws, ws.max_row, len(hdr))
     for g in groups:
         write_row(ws, ws.max_row + 1,
                   [g["label"], g["src"], g["os"].capitalize(), g["qty"],
-                   g["sku"], g["vcpu"], g["ram"]])
-    autofit(ws, [8, 14, 10, 6, 20, 7, 11])
+                   g["sku"], g["vcpu"], g["ram"], g["disk_desc"]])
+    autofit(ws, [8, 14, 10, 6, 20, 7, 11, 40])
 
-    # ---- Sheet 2: Per-Group monthly ----
+    # ---- Sheet 2: Per-Group (compute per commitment + disk) ----
     ws = wb.create_sheet("Per-Group")
-    ws["A1"] = "Monthly cost per group — all commitment options (€/month)"
+    ws["A1"] = "Monthly cost per group — compute by commitment + flat disk (€/month)"
     ws["A1"].font = TITLE_FONT
-    hdr = ["Group", "OS", "Qty", "SKU"] + [COMMIT_LABEL[k] for k in COMMITMENTS]
+    hdr = (["Group", "OS", "Qty", "SKU"] + [COMMIT_LABEL[k] for k in COMMITMENTS]
+           + ["Disk /mo"])
     ws.append([])
     ws.append(hdr)
     style_header(ws, ws.max_row, len(hdr))
-    money_cols = tuple(range(5, 5 + len(COMMITMENTS)))
+    money_cols = tuple(range(5, 5 + len(COMMITMENTS) + 1))  # commitments + disk
     for g in groups:
         row = [g["label"], g["os"].capitalize(), g["qty"], g["sku"]]
-        row += [g["monthly"][k] for k in COMMITMENTS]
+        row += [g["compute"][k] for k in COMMITMENTS]
+        row += [g["disk_total"]]
         write_row(ws, ws.max_row + 1, row, money_cols=money_cols)
-    # fleet subtotal
-    total_row = ["TOTAL", "", sum(g["qty"] for g in groups), ""] + [fleet[k] for k in COMMITMENTS]
+    total_row = (["TOTAL", "", n_vms, ""] + [f_compute[k] for k in COMMITMENTS]
+                 + [sum(g["disk_total"] for g in groups)])
     write_row(ws, ws.max_row + 1, total_row, money_cols=money_cols, bold=True)
-    autofit(ws, [8, 10, 6, 20] + [24] * len(COMMITMENTS))
+    ws.append([])
+    note = ws.cell(row=ws.max_row + 1, column=1,
+                   value="Commitment columns are COMPUTE only; add the flat Disk /mo for the "
+                         "group total. Disk has no reservation discount.")
+    note.font = Font(italic=True, color="808080")
+    autofit(ws, [8, 10, 6, 20] + [24] * len(COMMITMENTS) + [12])
 
-    # ---- Sheet 3: Fleet Total (monthly + annual) ----
+    # ---- Sheet 3: Fleet Total (compute / disk / total) ----
     ws = wb.create_sheet("Fleet Total")
-    ws["A1"] = f"Whole-fleet rollup — {sum(g['qty'] for g in groups)} VMs (€)"
+    ws["A1"] = f"Whole-fleet rollup — {n_vms} VMs (€)"
     ws["A1"].font = TITLE_FONT
-    hdr = ["Commitment", "Total / month", "Total / year", "vs PAYG"]
+    hdr = ["Commitment", "Compute /mo", "Disk /mo", "Total /mo", "Total /yr", "vs PAYG"]
     ws.append([])
     ws.append(hdr)
     style_header(ws, ws.max_row, len(hdr))
-    payg_y = (fleet["payg"] or 0) * 12
+    payg_y = (f_total["payg"] or 0) * 12
     for k in COMMITMENTS:
-        mo = fleet[k]
-        if mo is None:
-            write_row(ws, ws.max_row + 1, [COMMIT_LABEL[k], "N/A", "N/A", "N/A"])
+        if f_total[k] is None:
+            write_row(ws, ws.max_row + 1, [COMMIT_LABEL[k], "N/A", "N/A", "N/A", "N/A", "N/A"])
             continue
-        yr = mo * 12
+        tot = f_total[k]
+        yr = tot * 12
         vs = "—" if k == "payg" else f"-{(payg_y - yr) / payg_y * 100:.0f}%"
-        write_row(ws, ws.max_row + 1, [COMMIT_LABEL[k], mo, yr, vs],
-                  money_cols=(2, 3), bold=(k == "payg"))
+        write_row(ws, ws.max_row + 1,
+                  [COMMIT_LABEL[k], f_compute[k], f_disk[k], tot, yr, vs],
+                  money_cols=(2, 3, 4, 5), bold=(k == "payg"))
     ws.append([])
     note = ws.cell(row=ws.max_row + 1, column=1,
-                   value="Spot shown for Linux groups only (B+C); Windows has no Spot rate. "
-                         "Windows reserved given both with/without Azure Hybrid Benefit.")
+                   value="Spot covers Linux groups only (Windows has no Spot rate), so its disk "
+                         "excludes Windows. Windows reserved given both with/without Azure Hybrid Benefit.")
     note.font = Font(italic=True, color="808080")
-    autofit(ws, [30, 16, 16, 10])
+    autofit(ws, [30, 14, 12, 14, 16, 10])
 
-    # ---- Sheet 4: TCO over 1/2/3 year horizons ----
+    # ---- Sheet 4: TCO over 1/2/3 year horizons (compute + disk) ----
     ws = wb.create_sheet("TCO")
-    ws["A1"] = "Total Cost of Ownership — cumulative spend by horizon (€)"
+    ws["A1"] = "Total Cost of Ownership — cumulative spend by horizon (€, incl. disk)"
     ws["A1"].font = TITLE_FONT
     ws["A2"] = ("Azure VM reservations exist only in 1yr & 3yr terms. The 2-year column is a "
                 "time horizon (1yr reservation renewed), not a 2-year reservation product. "
@@ -286,11 +366,9 @@ def build(path, groups, region, currency):
     ws.append(hdr)
     style_header(ws, ws.max_row, len(hdr))
     for k in COMMITMENTS:
-        if k == "spot":
+        if k == "spot" or f_total[k] is None:
             continue  # spot is interruptible, not a TCO commitment baseline
-        mo = fleet[k]
-        if mo is None:
-            continue
+        mo = f_total[k]
         write_row(ws, ws.max_row + 1,
                   [COMMIT_LABEL[k], mo, mo * 12, mo * 24, mo * 36],
                   money_cols=(2, 3, 4, 5), bold=(k == "payg"))
@@ -300,26 +378,27 @@ def build(path, groups, region, currency):
     if parent:
         os.makedirs(parent, exist_ok=True)
     wb.save(path)
-    return fleet
+    return f_total
 
 
 def main():
     p = argparse.ArgumentParser(
         description="Export a multi-group fleet Azure quote to Excel",
         epilog="Example: export_fleet_xlsx.py "
-               "--group 4U8G,windows,10 --group 3U6G,linux,10 --group 5U11G,linux,10",
+               "--group 4U8G,windows,10,100ssd --group 3U6G,linux,10,80hdd "
+               "--group 5U11G,linux,10,200nvme",
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--group", "-g", action="append", dest="groups", metavar="SPEC,OS,QTY[,SKU]",
-                   help="A VM group: source spec, OS (linux/windows), quantity, and an "
-                        "optional explicit SKU. Repeat --group for each distinct group. "
-                        "SKU is auto-picked from the sizing rule when omitted.")
+    p.add_argument("--group", "-g", action="append", dest="groups", metavar="SPEC,OS,QTY[,DISK][,SKU]",
+                   help="A VM group: source spec, OS (linux/windows), quantity, an optional "
+                        "disk '<size><type>' (e.g. 100ssd / 80hdd / 200nvme), and an optional "
+                        "explicit SKU. Repeat --group per group. SKU auto-picked when omitted.")
     p.add_argument("--region", "-r", default="francecentral", help="Azure region (default: francecentral)")
     p.add_argument("--currency", "-c", default="EUR", help="Currency code (default: EUR)")
     p.add_argument("--output", "-o", default=None, help="Output .xlsx path (default: auto under quotes/)")
     args = p.parse_args()
 
     if not args.groups:
-        p.error("at least one --group is required, e.g. --group 4U8G,windows,10")
+        p.error("at least one --group is required, e.g. --group 4U8G,windows,10,100ssd")
 
     try:
         groups = build_groups(args.groups)
@@ -335,8 +414,8 @@ def main():
           f"{args.region} ({args.currency})")
     for g in groups:
         print(f"  {g['label']}: {g['src']:>7} {g['os']:<7} ×{g['qty']:<3} → "
-              f"{g['sku']} ({g['vcpu']}vCPU/{g['ram']}GiB)")
-    print("Monthly totals:")
+              f"{g['sku']} ({g['vcpu']}vCPU/{g['ram']}GiB) · disk {g['disk_desc']}")
+    print("Monthly totals (compute + disk):")
     for k in COMMITMENTS:
         v = fleet[k]
         print(f"  {COMMIT_LABEL[k]:32s} {'N/A' if v is None else f'€{v:,.2f}'}")

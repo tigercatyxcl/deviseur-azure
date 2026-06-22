@@ -17,8 +17,9 @@ Notes:
   * RVTools is a point-in-time *allocation* snapshot, not performance data, and
     contains NO Azure region — region is a target you choose (default
     francecentral). For performance-based right-sizing use Azure Migrate.
-  * Provisioned storage is modelled as a single managed disk per VM, billed at
-    the next tier up. Real migrations split OS/data disks.
+  * Provisioned storage is modelled as a single managed disk per VM, priced at
+    the cheapest tier within 80%-120% of the size (else the next tier above
+    120%). Real migrations split OS/data disks.
 """
 
 import argparse
@@ -363,7 +364,8 @@ def render(vms, skipped, args, sym, os_detected):
           "exceeds** its **allocated** RAM, with **vCPU floored** to the nearest Azure "
           "size at or just below the source. RVTools is a point-in-time allocation snapshot "
           "(no performance data, no Azure region) — for right-sizing use Azure Migrate. "
-          "Provisioned storage is modelled as one managed disk billed at the next tier up.")
+          "Provisioned storage is modelled as one managed disk priced at the cheapest "
+          "tier within 80%-120% of the size (else the next tier above 120%).")
     print(f"\n*Generated {date.today().isoformat()} from Azure Retail Prices API. "
           f"Prices are indicative and subject to change.*")
     return True

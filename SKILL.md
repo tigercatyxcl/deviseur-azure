@@ -38,6 +38,24 @@ RAM is honored; D-series wins because it's the Standard general-purpose family.
 This rule is implemented in `pick_flavor` / `target_vcpu` (`scripts/azure_lib.py`)
 and drives both the interactive proposal and the RVTools batch mapping.
 
+## Disk-sizing rule (when no tier matches exactly)
+
+Azure managed-disk tiers are discrete (4, 8, 16, 32, 64, 128, 256 … GiB). When a
+requested size has no exact tier, **minimize cost by minimizing the disk size
+within technical tolerance**:
+
+- Consider tiers within **80%–120%** of the requested size and pick the
+  **smallest** one (cheapest — this may sit *just below* the request, e.g. an
+  80 GiB request → a 64 GiB tier, since 64 = 80% of 80).
+- If **no tier falls in 80%–120%**, step up to the **smallest tier above 120%**.
+
+Examples: `80 GiB → 64 GiB tier` (in-band, cost down); `100 GiB → 128 GiB`
+(64 is below 80%, 128 is the smallest above 120%); `300 GiB → 256 GiB` (in-band).
+
+Implemented in `select_disk_tier` / `disk_tier_for_size` (`scripts/azure_lib.py`);
+a tier below the request is flagged `undersized`. Drives every disk price across
+the quote, RVTools, and fleet-export paths.
+
 ## Workflow (TWO steps — always interactive)
 
 ### Step 1 — Propose flavors
@@ -174,8 +192,8 @@ VM reservations exist only in 1yr and 3yr terms.
   AHB, or just *reserved compute* with Azure Hybrid Benefit. Quote both.
 - **Reservations** come only in **1yr and 3yr** terms — there is no 2-year RI. A
   "2-year" figure is a time horizon (1yr reservation renewed), not a product.
-- **Disk** is billed at the next tier up (25 GiB → P4 = 32 GiB). Disks have no
-  reservation discount.
+- **Disk** is mapped to a tier by the **disk-sizing rule** below (not always a
+  round-up). Disks have no reservation discount.
 - Monthly = hourly × 730; annual = hourly × 8760.
 
 ## Reference data

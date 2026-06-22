@@ -54,6 +54,15 @@ Example: `3U4G` → recommend `D2s_v5`-style sizing (2 vCPU, RAM ≥ 4 GiB, D-se
 Implemented in `pick_flavor` / `target_vcpu` (`scripts/azure_lib.py`); drives
 both the interactive proposal and the RVTools batch mapping.
 
+## Disk-sizing rule (no exact tier match)
+
+Disk tiers are discrete (4, 8, 16, 32, 64, 128 … GiB). Minimize cost within
+tolerance: pick the **smallest tier within 80%–120%** of the request (may sit
+just below it, e.g. 80 GiB → 64 GiB); if none falls in that band, step up to the
+**smallest tier above 120%** (100 GiB → 128 GiB). Implemented in
+`select_disk_tier` / `disk_tier_for_size`; a sub-request tier is flagged
+`undersized`.
+
 ## Workflow — TWO steps, always interactive
 
 When the user describes a VM by specs (e.g. "4U8G, 25G SSD", "4 vCPU 8GB",
@@ -157,8 +166,8 @@ use Azure Migrate. Powered-off VMs and templates are excluded by default. Needs
   just reserved compute (with Azure Hybrid Benefit). `query_quote.py --os
   windows` prints both rows; always present both.
 - **Reservations** come only in **1yr and 3yr** terms — there is no 2-year RI.
-- **Disk** is billed at the next tier up (25 GiB → P4 = 32 GiB) and has no
-  reservation discount.
+- **Disk** is mapped by the disk-sizing rule above (smallest tier in 80%–120%,
+  else next above 120% — not always a round-up) and has no reservation discount.
 - Monthly = hourly × 730; annual = hourly × 8760.
 
 ## Multi-group fleets & Excel export
