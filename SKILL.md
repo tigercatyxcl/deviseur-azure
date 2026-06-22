@@ -119,6 +119,24 @@ Powered-off VMs and templates are excluded by default. Requires `openpyxl`
 When the user asks to save/export/deliver the quote as a file, add `--output`
 (bare for an auto-named file under `quotes/`, or with a PATH).
 
+For a **Windows** headline (`--os windows`), the total table splits each
+reserved term into **no AHB** (Windows Server licence stays at PAYG on top of
+the reserved compute) and **with AHB** (Azure Hybrid Benefit — only the reserved
+compute is billed). Always quote both so the customer sees the licence upside.
+
+### export_fleet_xlsx.py
+Export a **multi-group fleet quote to a multi-sheet Excel workbook** (Selection,
+Per-Group, Fleet Total, TCO). Use when the user wants several different specs /
+OSes / quantities priced together, or asks for **Excel/`.xlsx` output**. Pulls
+live prices, carries the Windows AHB / no-AHB split, and builds a 1/2/3-year TCO.
+Edit the `GROUPS` list at the top of the file to define the fleet.
+```bash
+python3 scripts/export_fleet_xlsx.py            # writes under quotes/
+python3 scripts/export_fleet_xlsx.py --output /tmp/quote.xlsx
+```
+The 2-year TCO column is a **time horizon** (a 1yr reservation renewed) — Azure
+VM reservations exist only in 1yr and 3yr terms.
+
 ### analyze_rvtools.py
 | Option | Default | Notes |
 |--------|---------|-------|
@@ -139,6 +157,11 @@ When the user asks to save/export/deliver the quote as a file, add `--output`
 - **Reservation** `retailPrice` is the TOTAL for the whole term; the scripts
   convert it to an effective hourly/monthly rate.
 - **Linux and Windows+AHB** share the same compute price.
+- **Windows licence** = Windows PAYG − Linux PAYG. Reservations discount compute
+  only, so a reserved Windows VM is *reserved compute + licence at PAYG* without
+  AHB, or just *reserved compute* with Azure Hybrid Benefit. Quote both.
+- **Reservations** come only in **1yr and 3yr** terms — there is no 2-year RI. A
+  "2-year" figure is a time horizon (1yr reservation renewed), not a product.
 - **Disk** is billed at the next tier up (25 GiB → P4 = 32 GiB). Disks have no
   reservation discount.
 - Monthly = hourly × 730; annual = hourly × 8760.

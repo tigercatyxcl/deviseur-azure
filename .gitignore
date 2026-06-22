@@ -13,4 +13,5 @@ venv/
 
 # Generated quotes (keep the folder, ignore outputs)
 quotes/*.md
+quotes/*.xlsx
 !quotes/.gitkeep

@@ -94,12 +94,32 @@ def render(args, sym, sku):
         disk_m = disk_monthly or 0
         disk_total = disk_m * args.qty
         # (label, vm effective hourly). Reserved rates are already amortized hourly.
-        options = [
-            ("Pay-as-you-go", os_hourly),
-            ("Spot", vm["spot"] if args.os == "linux" else None),
-            ("1yr Reserved", vm["reserved_1yr"]),
-            ("3yr Reserved", vm["reserved_3yr"]),
-        ]
+        if args.os == "windows":
+            # Reservations discount compute only; the Windows licence is not
+            # reservable. Without Azure Hybrid Benefit the licence (windows −
+            # linux) stays at PAYG on top of the reserved compute; with AHB it
+            # drops, leaving just the base reserved compute. Show both.
+            lic = (vm["windows"] - vm["linux"]) if (vm["windows"] is not None
+                                                    and vm["linux"] is not None) else 0.0
+
+            def with_lic(hourly):
+                return None if hourly is None else hourly + lic
+
+            options = [
+                ("Pay-as-you-go", os_hourly),
+                ("Spot", None),  # Spot pricing is Linux-only
+                ("1yr Reserved (no AHB)", with_lic(vm["reserved_1yr"])),
+                ("1yr Reserved (with AHB)", vm["reserved_1yr"]),
+                ("3yr Reserved (no AHB)", with_lic(vm["reserved_3yr"])),
+                ("3yr Reserved (with AHB)", vm["reserved_3yr"]),
+            ]
+        else:
+            options = [
+                ("Pay-as-you-go", os_hourly),
+                ("Spot", vm["spot"]),
+                ("1yr Reserved", vm["reserved_1yr"]),
+                ("3yr Reserved", vm["reserved_3yr"]),
+            ]
         payg_month = os_hourly * HOURS_PER_MONTH * args.qty + disk_total
 
         print("| Commitment | VM /mo | Disk /mo | Total /mo | Total /yr | vs PAYG |")
@@ -122,6 +142,10 @@ def render(args, sym, sku):
         print(f"\n> Reserved = upfront/monthly commitment, amortized here to an effective rate. "
               f"Disk ({disk_info['sku_name'] if disk_info else 'n/a'}) has no reservation discount "
               f"and is the same in every row.")
+        if args.os == "windows":
+            print("> **Windows licence:** PAYG/reserved (no AHB) include the Windows Server "
+                  "licence. With **Azure Hybrid Benefit** you reuse an owned licence, so only "
+                  "the reserved compute is billed — quote both so the customer sees the AHB upside.")
 
     print(f"\n*Generated {date.today().isoformat()} from Azure Retail Prices API. "
           f"Prices are indicative and subject to change.*")

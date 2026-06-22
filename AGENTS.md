@@ -153,9 +153,21 @@ use Azure Migrate. Powered-off VMs and templates are excluded by default. Needs
 - **Reservation** `retailPrice` is the TOTAL for the whole term; the scripts
   convert it to an effective hourly/monthly rate.
 - **Linux and Windows+AHB** share the same compute price.
+- **Windows reserved** = reserved compute + Windows licence at PAYG (no AHB), or
+  just reserved compute (with Azure Hybrid Benefit). `query_quote.py --os
+  windows` prints both rows; always present both.
+- **Reservations** come only in **1yr and 3yr** terms — there is no 2-year RI.
 - **Disk** is billed at the next tier up (25 GiB → P4 = 32 GiB) and has no
   reservation discount.
 - Monthly = hourly × 730; annual = hourly × 8760.
+
+## Multi-group fleets & Excel export
+
+For several specs/OSes/quantities priced together, or when the user asks for
+**Excel/`.xlsx`**, use `scripts/export_fleet_xlsx.py` (define the fleet in the
+`GROUPS` list at the top). It writes a multi-sheet workbook — Selection,
+Per-Group, Fleet Total, and a 1/2/3-year TCO — with the Windows AHB / no-AHB
+split carried through. `.xlsx` outputs land under `quotes/` (git-ignored).
 
 ## Reference data
 
