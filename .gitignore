@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# OS
+.DS_Store
+
+# Local Claude Code config (not for publishing)
+.claude/
+
+# Generated quotes (keep the folder, ignore outputs)
+quotes/*.md
+quotes/*.xlsx
+!quotes/.gitkeep
